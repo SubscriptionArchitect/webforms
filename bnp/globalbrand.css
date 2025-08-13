@@ -1,0 +1,992 @@
+/* 
+   BNP CSS Stylesheet 
+   Created by: Brandon Decker
+   Date: 12-5-2024
+   Brand: Variable
+*/
+
+/* =============================== */
+/* FONT IMPORTS */
+/* =============================== */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans+Condensed:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;1,400&display=swap');
+
+/* =============================== */
+/* VARIABLE PLACEHOLDERS & EXTRA VARIABLES */
+/* =============================== */
+:root {
+  --primary-color: #000; /* Placeholder */
+  --secondary-color: #000; /* Placeholder */
+  --background-color: #FFF; /* Placeholder */
+  --background-image: none; /* Placeholder */
+  --text-color: #000; /* Placeholder */
+  --tertiary-color: #888; /* Placeholder */
+
+  --headline-font: sans-serif; /* Placeholder */
+  --body-font: serif; /* Placeholder */
+  --base-font-size: 16px;
+  --small-font-size: 0.875rem;
+  --medium-font-size: 1.3rem;
+  --large-font-size: 1.5rem;
+  --font-family: sans-serif; /* Placeholder */
+
+  /* Extra variables from Snippet A */
+  --placeholder-font-size: calc(1rem + 0.1vw);
+  --placeholder-color: black;
+}
+body.no-bg-image {
+  --background-image: none !important;
+}
+
+/* ===================================== */
+/* STOP HERE DO NOT UPDATE ANYTHING BELOW */
+/* ===================================== */
+
+/* =============================== */
+/* TEXT SELECTION HIGHLIGHT */
+/* =============================== */
+::selection {
+  background-color: var(--secondary-color);
+  color: #FFF;
+}
+
+/* =============================== */
+/* BASE STYLES */
+/* (Keeping the simple version so that the html and body remain unmanaged for height/overflow)
+   Note: We use overflow-y: auto (as in your working version)
+   and we do NOT add any min-height or viewport rules here.
+*/
+/* =============================== */
+html {
+  font-size: var(--base-font-size);
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--body-font);
+  color: var(--text-color);
+  background-color: var(--background-color);
+  background-image: var(--background-image);
+  font-size: var(--medium-font-size);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.bg-image {
+  background-color: transparent;
+}
+
+@media (max-width: 768px) {
+  #container {
+    margin: 5px;
+    width: 100%;
+    padding: 0px !important;
+  }
+}
+
+/* =============================== */
+/* CENTERED CONTENT CONTAINER */
+/* =============================== */
+.center-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+
+/* =============================== */
+/* MOBILE SETTINGS CONTAINER */
+/* =============================== */
+.mobile-settings-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 5px;
+  margin: 10px auto;
+}
+
+.mobile-settings-container h2 {
+  margin-bottom: 15px;
+}
+
+.mobile-settings-container h5 {
+  margin-top: 15px;
+}
+
+@media (max-width: 768px) {
+  .mobile-settings-container {
+    padding: 3px;
+    margin: 8px auto;
+  }
+  .mobile-settings-container h2 {
+    margin-bottom: 8px;
+  }
+  .mobile-settings-container h5 {
+    margin-top: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .mobile-settings-container {
+    padding: 2px;
+    margin: 4px auto;
+  }
+  .mobile-settings-container h2,
+  .mobile-settings-container h5 {
+    margin: 1px 0 !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-settings-container br {
+    display: none;
+  }
+}
+
+/* =============================== */
+/* TYPOGRAPHY STYLES */
+/* =============================== */
+input[type="text"]::placeholder, 
+input[type="password"]::placeholder, 
+input[type="email"]::placeholder, 
+textarea::placeholder, 
+select, 
+option {
+  font-size: clamp(16px, 1em, 100%) !important;
+}
+
+input[type="text"], 
+input[type="password"], 
+input[type="email"], 
+textarea, 
+select {
+  font-size: clamp(16px, 1em, 100%) !important;
+}
+
+p:not(p + input) > span.addresslabel > label, 
+p:not(p + input) > span.questionlabel > label {
+  font-size: 1.2rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--headline-font);
+  margin: 0;
+  color: var(--primary-color);
+}
+
+h1 {
+  font-size: 2.5rem !important;
+  font-weight: 700 !important;
+  text-align: center !important;
+  margin: 0 !important;
+  color: var(--primary-color) !important;
+}
+
+.dynamic-brand {
+  display: inline !important;
+  font: inherit !important;
+  color: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+  text-align: inherit !important;
+  white-space: nowrap;
+  font-style: var(--brand-font-style, normal) !important;
+  text-transform: var(--brand-text-transform, none) !important;
+}
+
+h2 {
+  font-size: 1.875rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.625rem;
+  font-weight: 500;
+  color: #3C3C3C;
+}
+
+h4 {
+  font-size: 1.375rem;
+  font-weight: 500;
+  color: #3C3C3C;
+}
+
+h5 {
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: #3C3C3C;
+}
+
+p {
+  font-size: var(--medium-font-size);
+  line-height: 1.6;
+}
+
+section#content p {
+  margin: 16px 0;
+}
+
+
+/* =============================== */
+/* CHECKBOX STYLES               */
+/* =============================== */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--primary-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  position: relative;
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
+}
+
+input[type="checkbox"]:focus {
+  box-shadow: 0 0 3px var(--secondary-color);
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--background-color);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* =============================== */
+/* LINK STYLES */
+/* =============================== */
+a {
+  color: var(--primary-color) !important;
+  text-decoration: none;
+}
+
+a:visited {
+  color: var(--primary-color) !important;
+}
+
+a:hover {
+  color: var(--secondary-color);
+  text-decoration: underline;
+}
+
+
+/* =============================== */
+/* HEADER STYLES */
+/* =============================== */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  padding: 5px 10px;
+  margin: 0;
+  box-shadow: none;
+  background-color: transparent;
+}
+
+.brand-logo {
+  margin: 5px;
+  text-align: center;
+}
+
+.brand-logo a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-logo img {
+  max-height: 120px;
+  width: auto;
+  transition: transform 0.2s, max-height 0.2s;
+}
+
+@media (max-width: 768px) {
+  .brand-logo img {
+    max-height: 100px;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-logo img {
+    max-height: 80px;
+  }
+}
+
+.brand-logo img:hover {
+  transform: scale(1.1);
+}
+
+/* =============================== */
+/* BUTTON STYLES */
+/* =============================== */
+button {
+  background-color: var(--primary-color);
+  color: #FFF;
+  font-family: var(--headline-font);
+  font-size: var(--medium-font-size);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: var(--secondary-color);
+}
+
+@media (max-width: 768px) {
+  button {
+    font-size: var(--small-font-size);
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  button {
+    font-size: var(--medium-font-size);
+  }
+}
+
+@media (min-width: 1025px) {
+  button {
+    font-size: var(--large-font-size);
+  }
+}
+
+input[type="submit"] {
+  background-color: var(--primary-color) !important;
+  color: #FFF !important;
+  font-family: var(--headline-font) !important;
+  font-size: var(--large-font-size) !important;
+  border: none !important;
+  padding: 12px 20px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  transition: background-color 0.3s ease !important;
+  text-align: center !important;
+  line-height: 1.2 !important;
+}
+
+input[type="submit"]:hover {
+  background-color: var(--secondary-color) !important;
+}
+
+@media (max-width: 768px) {
+  input[type="submit"] {
+    font-size: var(--medium-font-size) !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  input[type="submit"] {
+    font-size: var(--large-font-size) !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  input[type="submit"] {
+    font-size: var(--x-large-font-size) !important;
+  }
+}
+
+/* =============================== */
+/* INPUT STYLES */
+/* =============================== */
+input[type="text"], input[type="password"], input[type="email"], textarea, select {
+  font-size: var(--medium-font-size) !important;
+  color: #000 !important;
+}
+
+input, select, textarea {
+  font-family: var(--body-font);
+  font-size: var(--medium-font-size);
+  color: var(--text-color);
+  border: 1px solid var(--primary-color);
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--secondary-color);
+  outline: none;
+}
+
+input:required {
+  border-color: var(--primary-color);
+}
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: var(--background-color);
+  border: 1px solid var(--primary-color);
+  padding: 8px 40px 8px 8px;
+  border-radius: 4px;
+  font-family: var(--body-font);
+  font-size: var(--medium-font-size);
+  color: var(--text-color);
+  box-sizing: border-box;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpolygon points='0,0 10,0 5,6' fill='black'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+}
+
+select::-ms-expand {
+  display: none;
+}
+
+/* =============================== */
+/* FORGOT PASSWORD & INPUT GROUPS */
+/* =============================== */
+.interactive-container {
+  border: 1px solid var(--primary-color);
+  padding: 20px;
+  border-radius: 10px;
+  background-color: var(--background-color);
+  max-width: 500px;
+  margin: 20px auto 5px;
+  text-align: center;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.login-icon {
+  color: var(--primary-color);
+  font-size: clamp(24px, 5vw, 40px);
+  margin-bottom: 20px;
+}
+
+.input-group {
+  margin-bottom: 15px;
+  position: relative;
+  text-align: left;
+}
+
+.password-label-container,
+.email-label-container {
+  padding: 8px 0;
+  text-align: left;
+  width: 100%;
+  font-size: clamp(14px, 1.8vw, 18px);
+}
+
+.password-label-container label,
+.email-label-container label {
+  font-weight: bold;
+}
+
+.forgot-password-text {
+  color: var(--secondary-color);
+  cursor: pointer;
+  font-size: inherit;
+  margin: 0 5px;
+  text-decoration: none;
+}
+
+.forgot-password-container .fa-question-circle {
+  color: var(--primary-color);
+  font-size: inherit;
+  margin: 0 0.5em;
+}
+
+.eye-icon-container {
+  color: var(--secondary-color);
+  font-size: inherit;
+  margin-left: 10px;
+  cursor: pointer;
+  transition: font-size 0.3s ease, color 0.3s ease;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--primary-color);
+  border-radius: 5px;
+  font-size: clamp(14px, 1.8vw, 18px) !important;
+  margin-top: 5px;
+  box-sizing: border-box;
+}
+
+#password-group input[type="password"] {
+  margin-bottom: 20px !important;
+}
+
+input:required {
+  border-color: var(--primary-color);
+}
+
+input:required:focus,
+input:required:invalid {
+  border-color: var(--secondary-color);
+}
+
+@media screen and (max-width: 480px) {
+  .password-label-container,
+  .email-label-container,
+  .forgot-password-text,
+  .forgot-password-container .fa-question-circle,
+  .eye-icon-container,
+  input {
+    font-size: 14px !important;
+  }
+  .login-icon {
+    font-size: 24px;
+  }
+}
+
+
+
+/* =============================== */
+/* SOCIAL CONTAINER */
+/* =============================== */
+.social-container {
+  padding: 25px 10px;
+  background: transparent;
+  text-align: center;
+  color: var(--text-color);
+  box-sizing: border-box;
+  font-style: normal !important;
+}
+
+.social-icons {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 15px;
+  font-style: normal !important;
+}
+
+.social-icons a {
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, background-color 0.3s ease;
+  font-style: normal !important;
+}
+
+.social-icons img {
+  width: 18px;
+  height: 18px;
+  filter: brightness(100%) invert(1);
+}
+
+.footer-text {
+  font-size: var(--small-font-size);
+  margin-top: 10px;
+  color: var(--text-color);
+  font-style: normal !important;
+}
+
+.footer-text a {
+  color: var(--primary-color);
+  text-decoration: underline;
+  font-style: normal !important;
+}
+
+.footer-text a:hover {
+  color: var(--secondary-color);
+}
+
+/* =============================== */
+/* SMS CONTAINER */
+/* =============================== */
+.sms-optin-container {
+  background-color: #f9f9f9;
+  padding: 10px 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  margin: 10px auto;
+  max-width: 600px;
+  min-width: 350px;
+  width: 100%;
+  text-align: center;
+  font-family: sans-serif;
+}
+
+@media (max-width: 600px) {
+  .sms-optin-container {
+    min-width: 200px;
+  }
+}
+
+.sms-optin-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sms-container-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 10px;
+}
+
+.sms-optin-container label {
+  font-size: clamp(1rem, 2vw + 1rem, 1.3rem);
+  color: #000;
+  font-weight: 600;
+  margin: 2px 0;
+  display: block;
+}
+
+.sms-optin-container .questionlabel label {
+  font-size: clamp(0.95rem, 2vw + 1rem, 1.2rem);
+  color: #333;
+  font-weight: 600;
+}
+
+.sms-optin-container input[type="text"] {
+  width: 100% !important;
+  padding: 10px;
+  font-size: 1rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.sms-optin-container input[type="text"]:focus {
+  border-color: #005fcc;
+  box-shadow: 0 0 6px rgba(0,95,204,0.2);
+}
+
+.sms-optin-container button {
+  background-color: #005fcc;
+  color: #fff;
+  padding: 12px;
+  font-size: clamp(0.85rem, 2vw, 1rem);
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  width: 100%;
+  margin: 10px 0;
+}
+
+.sms-optin-container button:hover {
+  background-color: #004a99;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.info-icon {
+  margin-left: 5px;
+  cursor: pointer;
+  vertical-align: middle;
+  width: 18px;
+  height: 18px;
+}
+
+.alert-box {
+  background-color: #f9fbff;
+  padding: 15px;
+  position: absolute;
+  display: none;
+  z-index: 1000;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  font-size: 0.9rem;
+  color: #333;
+  width: fit-content;
+  text-align: left;
+}
+
+.close-btn {
+  cursor: pointer;
+  float: right;
+  font-weight: bold;
+  font-size: 1.2rem;
+  color: #888;
+  margin-left: 10px;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+/* =============================== */
+/* FOOTER */
+/* =============================== */
+footer {
+  font-size: var(--small-font-size);
+  background-color: none !important;
+  color: #FFF;
+  text-align: center;
+  padding: 20px;
+  font-style: normal !important;
+}
+
+/* ================================== */
+/* General Mobile Responsive Font Sizes */
+/* ================================== */
+
+/* Screens <= 1200px */
+@media (max-width: 1200px) {
+  h1 { font-size: 2.25rem !important; }
+  h2 { font-size: 1.85rem !important; }
+  h3 { font-size: 1.6rem !important; }
+  h4 { font-size: 1.35rem !important; }
+  h5 { font-size: 1.1rem !important; }
+  p  { font-size: 0.98rem !important; }
+}
+
+/* Screens <= 992px */
+@media (max-width: 992px) {
+  h1 { font-size: 2rem !important; }
+  h2 { font-size: 1.7rem !important; }
+  h3 { font-size: 1.45rem !important; }
+  h4 { font-size: 1.25rem !important; }
+  h5 { font-size: 1.1rem !important; }
+  p  { font-size: 0.96rem !important; }
+}
+
+/* Screens <= 768px */
+@media (max-width: 768px) {
+  h1 { font-size: 1.75rem !important; }
+  h2 { font-size: 1.5rem !important; }
+  h3 { font-size: 1.35rem !important; }
+  h4 { font-size: 1.15rem !important; }
+  h5 { font-size: 1rem !important; }
+  p  { font-size: 0.94rem !important; }
+}
+
+/* Screens <= 576px */
+@media (max-width: 576px) {
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+  h3 { font-size: 1.1rem !important; }
+  h4 { font-size: 1rem !important; }
+  h5 { font-size: 0.92rem !important; }
+}
+
+/* ================================== */
+/* SMS Related Responsive Styles */
+/* ================================== */
+
+/* Screens <= 1200px */
+@media (max-width: 1200px) {
+  .sms-optin-container label,
+  .sms-optin-container .questionlabel label,
+  .sms-optin-container select {
+    font-size: 1rem !important;
+  }
+}
+
+/* Screens <= 992px */
+@media (max-width: 992px) {
+  .sms-optin-container label,
+  .sms-optin-container .questionlabel label,
+  .sms-optin-container select {
+    font-size: 1rem !important;
+  }
+}
+
+/* Screens <= 768px */
+@media (max-width: 768px) {
+  .sms-optin-container label,
+  .sms-optin-container .questionlabel label,
+  .sms-optin-container select {
+    font-size: 0.9rem !important;
+  }
+}
+
+/* Screens <= 576px */
+@media (max-width: 576px) {
+  .sms-optin-container label,
+  .sms-optin-container .questionlabel label,
+  .sms-optin-container select {
+    font-size: 0.8rem !important;
+  }
+}
+
+/* Screens <= 480px */
+@media (max-width: 480px) {
+  .sms-container-wrapper {
+    padding: 5px;
+  }
+  .sms-optin-container {
+    padding: 8px;
+    max-width: 100%;
+    box-shadow: none;
+  }
+  .sms-optin-container h2,
+  .sms-optin-container p {
+    font-size: 0.85rem !important;
+  }
+  .sms-optin-container input[type="text"] {
+    font-size: 0.8rem !important;
+    padding: 8px;
+  }
+  .sms-optin-container button {
+    font-size: 0.75rem !important;
+    padding: 8px 12px;
+  }
+  .sms-optin-container label,
+  .sms-optin-container .questionlabel label,
+  .sms-optin-container select {
+    font-size: 0.75rem !important;
+  }
+}
+
+/* ================================================== */
+/* EXTRA STYLES FROM SNIPPET A (Not related to html/body height/overflow) */
+/* ================================================== */
+.test-version-message {
+  display: none !important;
+}
+
+
+/* Placeholder Overrides */
+input::placeholder,
+textarea::placeholder,
+select:invalid {
+  font-size: var(--placeholder-font-size) !important;
+  color: var(--placeholder-color, #555) !important;
+}
+input.dark-bg::placeholder,
+textarea.dark-bg::placeholder,
+select.dark-bg:invalid {
+  color: white !important;
+}
+
+/* Form Element Overrides */
+body input[type="text"],
+body input[type="number"],
+body input[type="password"],
+body input[type="email"],
+body select {
+  background-color: #F7FAFD !important;
+}
+
+/* Article-Specific Media Queries */
+@media (max-width: 1200px) {
+  article h2,
+  article.quote header p {
+    font-size: 1.5rem !important;
+  }
+}
+@media (max-width: 992px) {
+  article h2,
+  article.quote header p {
+    font-size: 1.3rem !important;
+  }
+}
+@media (max-width: 768px) {
+  article h2,
+  article.quote header p {
+    font-size: 1.1rem !important;
+  }
+}
+@media (max-width: 576px) {
+  article h2,
+  article.quote header p {
+    font-size: 0.95rem !important;
+  }
+}
+
+/* Disable Box Shadows on Images */
+img {
+  box-shadow: none !important;
+}
+
+/* Header Minor Tweaks */
+.brand-logo {
+  margin-top: 0px; /* Extra reset */
+}
+.brand-logo img {
+  max-width: 250px; /* Extra tweak from Snippet A */
+}
+
+/* Renewal Disclaimer Section */
+.renewal-container {
+  font-family: Arial, sans-serif !important;
+  margin: 20px 0 !important;
+}
+.renewal-container div {
+  background-color: #F9F9F9 !important;
+  border-left: 4px solid var(--primary-color) !important;
+  padding: 15px !important;
+  margin-bottom: 15px !important;
+  border-radius: 5px !important;
+}
+.renewal-container strong {
+  color: var(--primary-color) !important;
+  font-size: 14px !important;
+  display: block !important;
+  margin-bottom: 10px !important;
+}
+.renewal-container ul {
+  padding-left: 20px !important;
+  margin: 10px 0 !important;
+}
+.renewal-container li,
+.renewal-container p {
+  font-size: 13px !important;
+  line-height: 1.9 !important;
+  color: #333 !important;
+  margin-bottom: 10px !important;
+}
+.renewal-container a {
+  font-weight: bold !important;
+  color: var(--primary-color) !important;
+  text-decoration: underline !important;
+}
+@media (max-width: 768px) {
+  .renewal-container div {
+    padding: 12px !important;
+  }
+  .renewal-container strong {
+    font-size: 13px !important;
+  }
+  .renewal-container li,
+  .renewal-container p {
+    font-size: 12px !important;
+    line-height: 1.8 !important;
+  }
+}
+
+/* Minor Responsive Typography Differences */
+@media (max-width: 992px) {
+  h2 { font-size: 1.65rem !important; }
+}
+@media (max-width: 768px) {
+  h2 { font-size: 1.35rem !important; }
+}
+@media (max-width: 576px) {
+  h2 { font-size: 1rem !important; }
+}
