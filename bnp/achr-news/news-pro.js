@@ -1,8 +1,9 @@
-
 /* =====================================================================================
 NEWS PRO SITE MASTER SCRIPT
 Brandon Decker | UX LAB
 Updated: 12/17/2025
+(PATCHED: Pay Now = plain submit, native submit allowed on payment step, cart inject scope + no dupes,
+          tile -> product radio + ACHR/Weekly Chill yes/no enforcement + requested-version sync)
 
 ===================================================================================== */
 
@@ -43,7 +44,6 @@ Updated: 12/17/2025
     if (el.type === "hidden") return false;
     if (el.disabled) return false;
 
-    // if any parent is hidden, treat as hidden
     var p = el;
     while (p && p !== document.body) {
       var pcs = getComputedStyle(p);
@@ -108,13 +108,32 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
+     SECTION A — PAYMENT-SAFE SUBMIT GUARD (PATCHED: native submit on payment step)
      ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
     BNP.__SAFE_SUBMIT_GUARD__ = true;
 
     var nativeSubmit = HTMLFormElement.prototype.submit;
+
+    function isPaymentContext(form) {
+      try {
+        if (document.documentElement.classList.contains("payment-open")) return true;
+        if (document.body.classList.contains("payment-open")) return true;
+
+        if (form) {
+          if ((form.dataset && form.dataset.allowNativeSubmit === "1") ||
+              (form.classList && form.classList.contains("bnp-allow-native-submit"))) return true;
+
+          // Stripe-ish markers
+          if (form.querySelector('iframe[src*="stripe"]')) return true;
+          if (form.querySelector('[id*="stripe"], [class*="stripe"]')) return true;
+          if (form.querySelector('[data-payment], .payment, #payment')) return true;
+          if (document.querySelector("#content6.modal-open")) return true;
+        }
+      } catch (e) {}
+      return false;
+    }
 
     function findRealSubmitButton(form) {
       if (!form) return null;
@@ -128,6 +147,11 @@ Updated: 12/17/2025
     HTMLFormElement.prototype.submit = function () {
       try {
         var form = this;
+
+        // On payment step, do NOT intercept: let DF/Stripe do native behavior.
+        if (isPaymentContext(form)) {
+          return nativeSubmit.call(form);
+        }
 
         if (
           form &&
@@ -1096,7 +1120,8 @@ Updated: 12/17/2025
 
   /* ============================================================
      SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
-     + REQUIRED ENFORCEMENT (PATCHED + SINGLE SOURCE OF TRUTH)
+     + REQUIRED ENFORCEMENT + TILE/RADIO + ACHR/WC YES/NO ENFORCE
+     + PAYMENT BUTTON = PLAIN SUBMIT
      ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
@@ -1152,7 +1177,6 @@ Updated: 12/17/2025
       var type = (field.getAttribute("type") || "").toLowerCase();
       if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return true;
 
-      // Exclusions: Cell phone + sms opt-in blocks/ids
       if (field.closest && field.closest("#p124, #ps3")) return true;
       if (field.id === "id124" || field.id === "id974" || field.id === "id124_ccc") return true;
       if (field.id === "smss3") return true;
@@ -1186,12 +1210,10 @@ Updated: 12/17/2025
       var fields = $all("input,select,textarea", section);
       fields.forEach(function (f) {
         if (shouldExcludeRequired(f)) { setRequired(f, false); return; }
-        // force required ONLY if visible
         if (isFieldVisible(f)) setRequired(f, true);
         else setRequired(f, false);
       });
 
-      // Always require email in profile if present (and visible)
       if (sectionId === "content1") {
         var email = document.getElementById("id13");
         if (email && !shouldExcludeRequired(email) && isFieldVisible(email)) setRequired(email, true);
@@ -1203,7 +1225,7 @@ Updated: 12/17/2025
       enforceRequiredForSection("content4");
     }
 
-    // ---------- STRONG REQUIRED VALIDATION (stars + inline errors + Next gating) ----------
+    // ---------- STRONG REQUIRED VALIDATION ----------
     function ensureValidationStyles() {
       if (document.getElementById("bnp-required-style")) return;
       var s = document.createElement("style");
@@ -2045,7 +2067,7 @@ Updated: 12/17/2025
       if (!input) return null;
 
       var labelEl =
-        (input.id && (li.closest(".campaign-placeholder,.standard-rates") || document).querySelector("label[for='" + input.id + "']")) ||
+        (input.id && (li.closest(".campaign-placeholder,.standard-rates,.promo-key,[id^='campaignPlaceholder_'],[id*='campaignPlaceholder'],.paidElementProduct3309") || document).querySelector("label[for='" + input.id + "']")) ||
         li.querySelector("label") ||
         null;
 
@@ -2113,11 +2135,13 @@ Updated: 12/17/2025
         return allRows[0].input;
       }
 
-      var campaignRoots = $all(".campaign-placeholder");
+      var campaignRoots = findCampaignCandidates().filter(function (n) {
+        return !!(n && (n.matches && (n.matches(".campaign-placeholder,[id^='campaignPlaceholder_'],[id*='campaignPlaceholder'],.paidElementProduct3309"))));
+      });
       var fromCampaign = pickBestFromRoots(campaignRoots, true);
       if (fromCampaign) return fromCampaign;
 
-      var standardRoots = $all(".standard-rates");
+      var standardRoots = $all(".standard-rates, .promo-key");
       var fromStandard = pickBestFromRoots(standardRoots, false);
       if (fromStandard) return fromStandard;
 
@@ -2126,8 +2150,8 @@ Updated: 12/17/2025
 
     function clearMutualRadios(selectedInput) {
       if (!selectedInput) return;
-      var isCampaign = !!selectedInput.closest(".campaign-placeholder");
-      var targetGroup = isCampaign ? ".standard-rates" : ".campaign-placeholder";
+      var isCampaign = !!selectedInput.closest(".campaign-placeholder,[id^='campaignPlaceholder_'],[id*='campaignPlaceholder'],.paidElementProduct3309");
+      var targetGroup = isCampaign ? ".standard-rates,.promo-key" : ".campaign-placeholder,[id^='campaignPlaceholder_'],[id*='campaignPlaceholder'],.paidElementProduct3309";
 
       $all(targetGroup + " input[type='radio']").forEach(function (r) {
         if (r.checked) {
@@ -2150,7 +2174,7 @@ Updated: 12/17/2025
     }
 
     function clearAllRateRadios() {
-      [".campaign-placeholder", ".standard-rates"].forEach(function (sel) {
+      [".campaign-placeholder,[id^='campaignPlaceholder_'],[id*='campaignPlaceholder'],.paidElementProduct3309", ".standard-rates", ".promo-key"].forEach(function (sel) {
         $all(sel + " input[type='radio']").forEach(function (r) {
           if (r.checked) {
             r.checked = false;
@@ -2223,6 +2247,19 @@ Updated: 12/17/2025
       if (!okWc) setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
     }
 
+    function enforcePlanSideQuestions(kind) {
+      // kind: chill/digital/print/fan
+      var weeklyYes = (kind === "chill");
+      if (weeklyYes) setNewsAndWeekly(false, true);
+      else setNewsAndWeekly(true, false);
+
+      setWeeklyRequestedVersion(weeklyYes);
+
+      if (weeklyYes) setAchRequestedVersion("do not want");
+      else if (kind === "print") setAchRequestedVersion("print");
+      else setAchRequestedVersion("digital");
+    }
+
     function attachTileClickSelection() {
       var root = $("section.plans");
       if (!root) return;
@@ -2248,24 +2285,10 @@ Updated: 12/17/2025
         var period = currentPeriod();
         var region = CACHE.region || "usa";
 
-        var weeklyYes = (kind === "chill");
-
-        if (weeklyYes) setNewsAndWeekly(false, true);
-        else setNewsAndWeekly(true, false);
-
-        setWeeklyRequestedVersion(weeklyYes);
-
-        if (weeklyYes) setAchRequestedVersion("do not want");
-        else if (kind === "print") setAchRequestedVersion("print");
-        else setAchRequestedVersion("digital");
+        enforcePlanSideQuestions(kind);
 
         if (kind === "fan") {
           clearAllRateRadios();
-
-          setNewsAndWeekly(true, false);
-          setAchRequestedVersion("digital");
-          setWeeklyRequestedVersion(false);
-
           CACHE.product = null;
           if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
           return;
@@ -2279,7 +2302,36 @@ Updated: 12/17/2025
       }, true);
     }
 
-    /* ---------- FLOW WIZARD (PAYMENT: move ORIGINAL submit into modal bar, centered) ---------- */
+    function wireRateRadioToQuestionSync() {
+      if (document.body.dataset.__bnpRateQuestionSync === "1") return;
+      document.body.dataset.__bnpRateQuestionSync = "1";
+
+      var inSync = false;
+
+      document.addEventListener("change", function (e) {
+        if (inSync) return;
+        var t = e.target;
+        if (!t || !t.matches || !t.matches("input[type='radio']")) return;
+
+        var li = t.closest && t.closest("li");
+        if (!li) return;
+
+        var row = decodeRateRow(li);
+        if (!row || !row.kind) return;
+
+        // Only enforce for subscription product radios (Aprod/Dprod/Pprod style)
+        inSync = true;
+        try {
+          if (row.kind === "chill") enforcePlanSideQuestions("chill");
+          else if (row.kind === "print") enforcePlanSideQuestions("print");
+          else if (row.kind === "digital") enforcePlanSideQuestions("digital");
+        } finally {
+          setTimeout(function () { inSync = false; }, 0);
+        }
+      }, true);
+    }
+
+    /* ---------- FLOW WIZARD (PAYMENT: move REAL submit into modal bar, plain submit only) ---------- */
     function setupFlowWizard() {
       if (!window.__BNP_FLOW_WIZ_RETRY) window.__BNP_FLOW_WIZ_RETRY = 0;
 
@@ -2309,6 +2361,9 @@ Updated: 12/17/2025
           (root.closest && root.closest("form")) ||
           document.querySelector("form");
         if (!form) return;
+
+        // payment step: allow native submit flow
+        try { form.dataset.allowNativeSubmit = "1"; } catch (e) {}
 
         var btn =
           root.querySelector('button[type="submit"], input[type="submit"]') ||
@@ -2384,6 +2439,7 @@ Updated: 12/17/2025
         var btn =
           content6.querySelector('input[type="submit"]') ||
           content6.querySelector('button[type="submit"]') ||
+          content6.querySelector('button:not([type])') ||
           null;
         if (!btn) return null;
 
@@ -2413,6 +2469,47 @@ Updated: 12/17/2025
         try { submitDock.wrap.style.display = "none"; } catch (e) {}
       }
 
+      function getFormForContent6() {
+        if (!content6) return document.querySelector("form");
+        return (content6.closest && content6.closest("form")) || document.querySelector("form");
+      }
+
+      function ensurePlainSubmitButton(wrap) {
+        if (!wrap) return null;
+
+        // If there's already an input submit, use it.
+        var existingInput = wrap.querySelector("input[type='submit']");
+        if (existingInput) return existingInput;
+
+        // If there's a button submit, keep it hidden and add a real input submit.
+        var existingBtn = wrap.querySelector("button[type='submit'], button:not([type])");
+        if (existingBtn) {
+          try { existingBtn.removeAttribute("onclick"); } catch (e) {}
+          try { existingBtn.onclick = null; } catch (e) {}
+          try { existingBtn.style.display = "none"; } catch (e) {}
+        }
+
+        var input = document.createElement("input");
+        input.type = "submit";
+        input.value = "Pay Now";
+        input.setAttribute("aria-label", "Pay Now");
+        stylePayNow(input);
+
+        // Add a harmless checkPayment hook if legacy markup expects it, but DO NOT require it.
+        input.addEventListener("click", function () {
+          try {
+            if (typeof window.checkPayment === "function") {
+              var ok = window.checkPayment();
+              if (ok === false) return false;
+            }
+          } catch (e) {}
+          return true;
+        });
+
+        wrap.appendChild(input);
+        return input;
+      }
+
       function moveRealSubmitIntoPaymentBar() {
         if (!content6) return;
         var centerSlot = actions.querySelector(".bnp-action-center");
@@ -2424,18 +2521,23 @@ Updated: 12/17/2025
 
         ensureSubmitDockCaptured(wrap);
 
-        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"], button:not([type])');
-        if (realBtn) {
-          // Force plain submit, no JS hijack
-          try { realBtn.removeAttribute("onclick"); } catch (e) {}
-          try { realBtn.onclick = null; } catch (e) {}
-          if (realBtn.tagName === "BUTTON") {
-            try { realBtn.setAttribute("type", "submit"); } catch (e) {}
-          }
+        // Make sure payment step uses native submit behavior (no requestSubmit interception)
+        var form = getFormForContent6();
+        if (form) {
+          try { form.dataset.allowNativeSubmit = "1"; } catch (e) {}
+          try { form.classList.add("bnp-allow-native-submit"); } catch (e) {}
+        }
 
-          try { realBtn.value = "Pay Now"; } catch (e) {}
-          try { realBtn.textContent = "Pay Now"; } catch (e) {}
-          stylePayNow(realBtn);
+        var payBtn = ensurePlainSubmitButton(wrap);
+        if (payBtn) {
+          try { payBtn.removeAttribute("onclick"); } catch (e) {}
+          try { payBtn.onclick = null; } catch (e) {}
+          if (payBtn.tagName === "BUTTON") {
+            try { payBtn.setAttribute("type", "submit"); } catch (e) {}
+          }
+          try { payBtn.value = "Pay Now"; } catch (e) {}
+          try { payBtn.textContent = "Pay Now"; } catch (e) {}
+          stylePayNow(payBtn);
         }
 
         try {
@@ -2551,6 +2653,13 @@ Updated: 12/17/2025
         if (backdrop) backdrop.style.display = "block";
         document.documentElement.classList.add("payment-open");
         document.body.classList.add("payment-open");
+
+        // Allow native submit in payment modal.
+        var form = getFormForContent6();
+        if (form) {
+          try { form.dataset.allowNativeSubmit = "1"; } catch (e) {}
+          try { form.classList.add("bnp-allow-native-submit"); } catch (e) {}
+        }
 
         try { content6.scrollTop = 0; } catch (e) {}
         scrollToHeaderNow();
@@ -2737,6 +2846,7 @@ Updated: 12/17/2025
           return;
         }
 
+        // Payment step button is hidden; Pay Now submit button handles submit.
         if (step === "content6") {
           submitViaNative(content6);
         }
@@ -2777,7 +2887,8 @@ Updated: 12/17/2025
           chosenFree = /free/.test(title);
 
           if (/ac\s*pro\s*\+\s*print|print/.test(title)) goToNewsletters("print");
-          else if (/pro|digital|chill/.test(title)) goToNewsletters("digital");
+          else if (/chill/.test(title)) goToNewsletters("digital");
+          else if (/pro|digital/.test(title)) goToNewsletters("digital");
           else goToNewsletters("none");
         }, true);
       });
@@ -2801,7 +2912,7 @@ Updated: 12/17/2025
         if (w) w.style.display = "none";
       } catch (e) {}
 
-      // Final safety: if any legacy markup references checkPayment, keep it harmless
+      // Keep harmless checkPayment if legacy markup references it.
       if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
 
       step = "plans";
@@ -2815,11 +2926,11 @@ Updated: 12/17/2025
       initBillingToggle();
       initCountryListener();
       attachTileClickSelection();
+      wireRateRadioToQuestionSync();
 
       applyPricesNow();
       setupFlowWizard();
 
-      // Enforce required as DF hides/shows fields (country-driven)
       if (window.MutationObserver) {
         var t1 = document.getElementById("content1");
         var t4 = document.getElementById("content4");
@@ -2828,7 +2939,6 @@ Updated: 12/17/2025
         if (t4) mo.observe(t4, { attributes: true, childList: true, subtree: true });
       }
 
-      // Validate on real submit too (Pay Now)
       var form = document.querySelector("form");
       if (form && !form.dataset.__bnpSubmitGuard) {
         form.dataset.__bnpSubmitGuard = "1";
@@ -2837,7 +2947,6 @@ Updated: 12/17/2025
           var c1 = document.getElementById("content1");
           var c4 = document.getElementById("content4");
 
-          // Only block for sections that currently have visible required fields
           var ok1 = c1 ? (stepIsValidSimple("content1") ? true : validateStep("content1").ok) : true;
           var ok4 = c4 ? (stepIsValidSimple("content4") ? true : validateStep("content4").ok) : true;
 
@@ -2956,7 +3065,7 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first) (ORIGINAL)
+     SECTION O — CART FORCE-SYNC (PATCHED: scope to visible step, never dupes)
      ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
@@ -2975,6 +3084,27 @@ Updated: 12/17/2025
       return m ? parseFloat(m[1].replace(/,/g, "")) : null;
     }
     var fmt = function (n) { return typeof n === "number" && !isNaN(n) ? "$" + n.toFixed(2) : null; };
+
+    function isVisibleNode(el) {
+      if (!el) return false;
+      var cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+      if (el.offsetParent === null && cs.position !== "fixed") return false;
+      return true;
+    }
+
+    function activeCartScope() {
+      var c6 = Q("#content6.modal-open");
+      if (c6) return c6;
+
+      var c4 = Q("#content4");
+      if (c4 && isVisibleNode(c4)) return c4;
+
+      var c1 = Q("#content1");
+      if (c1 && isVisibleNode(c1)) return c1;
+
+      return document;
+    }
 
     function labelForInput(input) {
       if (!input) return null;
@@ -3004,7 +3134,7 @@ Updated: 12/17/2025
     }
 
     function findCheckedProductRadio() {
-      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key")].filter(Boolean);
+      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key"), Q("[id^='campaignPlaceholder_']"), Q("[id*='campaignPlaceholder']"), Q(".paidElementProduct3309")].filter(Boolean);
 
       for (var i = 0; i < roots.length; i++) {
         var checked = Q("input[type='radio']:checked", roots[i]);
@@ -3083,6 +3213,7 @@ Updated: 12/17/2025
     }
 
     var CART = { kind: null, price: null, term: null, format: null, img: null };
+    var __rendering = false;
 
     function computeCartSnapshot() {
       var radio = decodeSelectedRadio();
@@ -3114,52 +3245,74 @@ Updated: 12/17/2025
       return { kind: kind, price: price2, term: term2, format: format2, img: img2 };
     }
 
+    function resolveCartHosts() {
+      var scope = activeCartScope();
+      var items = QA(".cartItems", scope).filter(isVisibleNode);
+      var totals = QA(".cartTotal", scope).filter(isVisibleNode);
+
+      // Fallback: if scope has none, use visible ones globally (still avoid hidden)
+      if (!items.length) items = QA(".cartItems").filter(isVisibleNode);
+      if (!totals.length) totals = QA(".cartTotal").filter(isVisibleNode);
+
+      // Final fallback: first ones if everything is hidden
+      if (!items.length) items = QA(".cartItems").slice(0, 1);
+      if (!totals.length) totals = QA(".cartTotal").slice(0, 1);
+
+      return { items: items, totals: totals };
+    }
+
     function renderCart(snapshot) {
-      var items = QA(".cartItems");
-      var totals = QA(".cartTotal");
+      var hosts = resolveCartHosts();
+      var items = hosts.items;
+      var totals = hosts.totals;
 
       if (!items.length && !totals.length) return;
 
-      // hard reset so we never duplicate
-      items.forEach(function (el) { el.innerHTML = ""; });
+      __rendering = true;
+      try {
+        // hard reset so we never duplicate
+        items.forEach(function (el) { el.innerHTML = ""; });
 
-      var total = 0;
+        var total = 0;
 
-      if (snapshot.kind && snapshot.kind !== "fan" && snapshot.price) {
-        var div = document.createElement("div");
-        div.innerHTML =
-          '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;float:left;" />' +
-          '<p style="margin:0;font-size:14px;color:#555;">Price: ' + snapshot.price +
-          "<br>" + snapshot.term + ", " + snapshot.format + " Subscription</p>";
+        if (snapshot.kind && snapshot.kind !== "fan" && snapshot.price) {
+          var div = document.createElement("div");
+          div.innerHTML =
+            '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;float:left;" />' +
+            '<p style="margin:0;font-size:14px;color:#555;">Price: ' + snapshot.price +
+            "<br>" + snapshot.term + ", " + snapshot.format + " Subscription</p>";
 
-        div.style.display = "flex";
-        div.style.alignItems = "center";
-        div.style.gap = "12px";
-        div.style.borderBottom = "1px solid #ccc";
-        div.style.paddingBottom = "10px";
+          div.style.display = "flex";
+          div.style.alignItems = "center";
+          div.style.gap = "12px";
+          div.style.borderBottom = "1px solid #ccc";
+          div.style.paddingBottom = "10px";
 
-        items.forEach(function (el) { el.appendChild(div.cloneNode(true)); });
+          items.forEach(function (el) { el.appendChild(div.cloneNode(true)); });
 
-        var parsed = _moneyFromString(snapshot.price);
-        total += typeof parsed === "number" && !isNaN(parsed) ? parsed : 0;
-      } else {
-        items.forEach(function (el) { el.innerHTML = "<p>No selections made.</p>"; });
-      }
-
-      var autoRenew = Q("#id104_996");
-
-      totals.forEach(function (el) {
-        el.innerHTML = "<h3>Total: $" + total.toFixed(2) + "</h3>";
-
-        if (autoRenew && autoRenew.checked) {
-          var d = document.createElement("p");
-          d.className = "disclaimer";
-          d.style.fontSize = "12px";
-          d.style.color = "#888";
-          d.textContent = "Automatically renews at our standard rate.";
-          el.appendChild(d);
+          var parsed = _moneyFromString(snapshot.price);
+          total += typeof parsed === "number" && !isNaN(parsed) ? parsed : 0;
+        } else {
+          items.forEach(function (el) { el.innerHTML = "<p>No selections made.</p>"; });
         }
-      });
+
+        var autoRenew = Q("#id104_996");
+
+        totals.forEach(function (el) {
+          el.innerHTML = "<h3>Total: $" + total.toFixed(2) + "</h3>";
+
+          if (autoRenew && autoRenew.checked) {
+            var d = document.createElement("p");
+            d.className = "disclaimer";
+            d.style.fontSize = "12px";
+            d.style.color = "#888";
+            d.textContent = "Automatically renews at our standard rate.";
+            el.appendChild(d);
+          }
+        });
+      } finally {
+        __rendering = false;
+      }
     }
 
     function syncCartNow() {
@@ -3180,8 +3333,13 @@ Updated: 12/17/2025
       if (changed) renderCart(snap);
     }
 
+    var __burstLock = false;
     function burstSync() {
-      var steps = [0, 40, 120, 220, 360, 520, 700, 900, 1200, 1600];
+      if (__burstLock) return;
+      __burstLock = true;
+      setTimeout(function () { __burstLock = false; }, 700);
+
+      var steps = [0, 40, 120, 220, 360, 520, 700, 900];
       steps.forEach(function (ms) { setTimeout(syncCartNow, ms); });
     }
 
@@ -3214,10 +3372,16 @@ Updated: 12/17/2025
 
     function watchPricingBlocks() {
       if (!window.MutationObserver) return;
-      var mo = new MutationObserver(function () { burstSync(); });
-      [".campaign-placeholder", ".standard-rates", ".promo-key"].forEach(function (sel) {
+      var deb = debounce(function () {
+        if (__rendering) return;
+        burstSync();
+      }, 120);
+
+      var mo = new MutationObserver(function () { deb(); });
+
+      [".campaign-placeholder", ".standard-rates", ".promo-key", "[id^='campaignPlaceholder_']", "[id*='campaignPlaceholder']", ".paidElementProduct3309"].forEach(function (sel) {
         var el = Q(sel);
-        if (el) mo.observe(el, { childList: true, subtree: true, attributes: true, characterData: true });
+        if (el) mo.observe(el, { childList: true, subtree: true }); // PATCH: avoid attribute/characterData loops
       });
     }
 
