@@ -1,7 +1,7 @@
+
 /* =====================================================================================
 NEWS PRO SITE MASTER SCRIPT
-Brandon Decker
-UX LAB
+Brandon Decker | UX LAB
 Updated: 12/17/2025
 
 ===================================================================================== */
@@ -41,9 +41,22 @@ Updated: 12/17/2025
   function isFieldVisible(el) {
     if (!el) return false;
     if (el.type === "hidden") return false;
+    if (el.disabled) return false;
+
+    // if any parent is hidden, treat as hidden
+    var p = el;
+    while (p && p !== document.body) {
+      var pcs = getComputedStyle(p);
+      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
+      p = p.parentElement;
+    }
+
     var cs = getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") return false;
+    if (el.offsetParent === null && cs.position !== "fixed") {
+      var r = el.getBoundingClientRect();
+      if ((r.width === 0 && r.height === 0)) return false;
+    }
     return true;
   }
   function debounce(fn, ms) {
@@ -53,6 +66,25 @@ Updated: 12/17/2025
       clearTimeout(t);
       t = setTimeout(function () { fn.apply(null, args); }, ms);
     };
+  }
+
+  function isEmptyValue(v) {
+    return !String(v == null ? "" : v).trim();
+  }
+
+  function looksLikeEmailField(el) {
+    if (!el) return false;
+    var t = (el.getAttribute("type") || "").toLowerCase();
+    if (t === "email") return true;
+    if (el.id === "id13") return true;
+    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
+    return false;
+  }
+
+  function isValidEmail(v) {
+    var s = String(v || "").trim();
+    if (!s) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   }
 
   /* ============================================================
@@ -76,7 +108,7 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUUARD (ORIGINAL)
+     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
@@ -126,16 +158,16 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION B — ZIP / CITY / STATE FAIL-SAFE (ORIGINAL)
+     SECTION B — ZIP / CITY / STATE FAIL-SAFE (PATCHED: DO NOT HIDE REQUIRED FIELDS)
      ============================================================ */
   (function () {
     if (BNP.__ZIP_HELPER__) return;
     BNP.__ZIP_HELPER__ = true;
 
     onReady(function () {
-      var zipInput = document.getElementById("id9"); // Zip/Postal
-      var cityInput = document.getElementById("id6"); // City (hidden)
-      var stateSelect = document.getElementById("id8"); // State/Province (hidden)
+      var zipInput = document.getElementById("id9");  // Zip/Postal
+      var cityInput = document.getElementById("id6"); // City
+      var stateSelect = document.getElementById("id8"); // State/Province
 
       if (!zipInput || !cityInput || !stateSelect) return;
 
@@ -146,79 +178,13 @@ Updated: 12/17/2025
         return;
       }
 
-      function tweakLabel(labelSelector) {
-        var labelEl = document.querySelector(labelSelector);
-        if (!labelEl) return;
-
-        var stars = labelEl.querySelectorAll(".req-star");
-        stars.forEach(function (s) { s.remove(); });
-
-        var baseText = (labelEl.textContent || "").replace("*", "").trim().replace(/:$/, "");
-        labelEl.textContent = baseText + ":";
-      }
-
-      tweakLabel("#p6 .questionlabel label"); // City label
-      tweakLabel("#p8 .questionlabel label"); // State/Province label
-
       var stateCodeToLabel = {
-        "AL": "Alabama","AK": "Alaska","AZ": "Arizona","AR": "Arkansas","CA": "California","CO": "Colorado","CT": "Connecticut","DE": "Delaware","DC": "District of Columbia",
-        "FL": "Florida","GA": "Georgia","HI": "Hawaii","ID": "Idaho","IL": "Illinois","IN": "Indiana","IA": "Iowa","KS": "Kansas","KY": "Kentucky","LA": "Louisiana","ME": "Maine",
-        "MD": "Maryland","MA": "Massachusetts","MI": "Michigan","MN": "Minnesota","MS": "Mississippi","MO": "Missouri","MT": "Montana","NE": "Nebraska","NV": "Nevada","NH": "New Hampshire",
-        "NJ": "New Jersey","NM": "New Mexico","NY": "New York","NC": "North Carolina","ND": "North Dakota","OH": "Ohio","OK": "Oklahoma","OR": "Oregon","PA": "Pennsylvania","RI": "Rhode Island",
-        "SC": "South Carolina","SD": "South Dakota","TN": "Tennessee","TX": "Texas","UT": "Utah","VT": "Vermont","VI": "Virgin Islands","VA": "Virginia","WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
+        "AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia",
+        "FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine",
+        "MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire",
+        "NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island",
+        "SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VI":"Virgin Islands","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"
       };
-
-      var cityDisplay = document.createElement("span");
-      cityDisplay.id = "cityDisplayText";
-      cityDisplay.className = "address-display-text";
-      cityDisplay.style.display = "none";
-      cityDisplay.style.minHeight = "1.5em";
-      cityDisplay.style.fontSize = "inherit";
-      cityDisplay.style.fontWeight = "600";
-      cityDisplay.style.marginLeft = "4px";
-
-      var stateDisplay = document.createElement("span");
-      stateDisplay.id = "stateDisplayText";
-      stateDisplay.className = "address-display-text";
-      stateDisplay.style.display = "none";
-      stateDisplay.style.minHeight = "1.5em";
-      stateDisplay.style.fontSize = "inherit";
-      stateDisplay.style.fontWeight = "600";
-      stateDisplay.style.marginLeft = "4px";
-
-      var cityParent = cityInput.parentNode;
-      var stateParent = stateSelect.parentNode;
-
-      if (cityParent && !document.getElementById("cityDisplayText")) cityParent.appendChild(cityDisplay);
-      if (stateParent && !document.getElementById("stateDisplayText")) stateParent.appendChild(stateDisplay);
-
-      function syncCityDisplay() { cityDisplay.textContent = cityInput.value || ""; }
-      function syncStateDisplay() {
-        var idx = stateSelect.selectedIndex;
-        var opt = idx >= 0 ? stateSelect.options[idx] : null;
-        stateDisplay.textContent = (opt && opt.text) ? opt.text : "";
-      }
-
-      function applyCityStateVisibility() {
-        var hasCity = !!(cityInput.value || "").trim();
-        var hasState = !!(stateSelect.value || "").trim();
-
-        if (hasCity) {
-          cityDisplay.style.display = "inline-block";
-          cityInput.style.display = "none";
-        } else {
-          cityDisplay.style.display = "none";
-          cityInput.style.display = "";
-        }
-
-        if (hasState) {
-          stateDisplay.style.display = "inline-block";
-          stateSelect.style.display = "none";
-        } else {
-          stateDisplay.style.display = "none";
-          stateSelect.style.display = "";
-        }
-      }
 
       function setStateByCode(stateCode) {
         var label = stateCodeToLabel[stateCode];
@@ -235,14 +201,7 @@ Updated: 12/17/2025
             break;
           }
         }
-
-        syncStateDisplay();
-        applyCityStateVisibility();
       }
-
-      syncCityDisplay();
-      syncStateDisplay();
-      applyCityStateVisibility();
 
       var lastZipLookedUp = "";
 
@@ -268,17 +227,12 @@ Updated: 12/17/2025
               cityInput.value = city;
               cityInput.dispatchEvent(new Event("input", { bubbles: true }));
               cityInput.dispatchEvent(new Event("change", { bubbles: true }));
-              syncCityDisplay();
             }
 
             if (stateCode) setStateByCode(stateCode);
-            else syncStateDisplay();
-
-            applyCityStateVisibility();
           })
           .catch(function (err) {
             console.warn("[ZIP] Lookup failed:", err);
-            applyCityStateVisibility();
           });
       }
 
@@ -290,7 +244,6 @@ Updated: 12/17/2025
         var v = readZipDigits();
         if (v.length < 5) {
           lastZipLookedUp = "";
-          applyCityStateVisibility();
           return;
         }
         if (v.length === 5) lookupZip(v);
@@ -299,15 +252,6 @@ Updated: 12/17/2025
       zipInput.addEventListener("blur", function () {
         var v = readZipDigits();
         if (v.length === 5) lookupZip(v);
-      });
-
-      cityInput.addEventListener("input", function () {
-        syncCityDisplay();
-        applyCityStateVisibility();
-      });
-      stateSelect.addEventListener("change", function () {
-        syncStateDisplay();
-        applyCityStateVisibility();
       });
     });
   })();
@@ -1152,6 +1096,7 @@ Updated: 12/17/2025
 
   /* ============================================================
      SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
+     + REQUIRED ENFORCEMENT (PATCHED + SINGLE SOURCE OF TRUTH)
      ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
@@ -1200,7 +1145,65 @@ Updated: 12/17/2025
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
 
-    // ---------- STRONG REQUIRED VALIDATION (UPGRADED: stars + inline errors + supports Next gating) ----------
+    // ---------- REQUIRED ENFORCEMENT (VISIBLE FIELDS ONLY) ----------
+    function shouldExcludeRequired(field) {
+      if (!field) return true;
+      if (field.disabled) return true;
+      var type = (field.getAttribute("type") || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return true;
+
+      // Exclusions: Cell phone + sms opt-in blocks/ids
+      if (field.closest && field.closest("#p124, #ps3")) return true;
+      if (field.id === "id124" || field.id === "id974" || field.id === "id124_ccc") return true;
+      if (field.id === "smss3") return true;
+
+      return false;
+    }
+
+    function setRequired(field, on) {
+      if (!field) return;
+      try {
+        if (on) {
+          field.setAttribute("aria-required", "true");
+          field.dataset.__bnpForcedReq = "1";
+          if (field.tagName === "INPUT" || field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
+            field.required = true;
+          }
+        } else {
+          if (field.dataset && field.dataset.__bnpForcedReq === "1") {
+            field.removeAttribute("aria-required");
+            try { field.required = false; } catch (e) {}
+            delete field.dataset.__bnpForcedReq;
+          }
+        }
+      } catch (e) {}
+    }
+
+    function enforceRequiredForSection(sectionId) {
+      var section = document.getElementById(sectionId);
+      if (!section) return;
+
+      var fields = $all("input,select,textarea", section);
+      fields.forEach(function (f) {
+        if (shouldExcludeRequired(f)) { setRequired(f, false); return; }
+        // force required ONLY if visible
+        if (isFieldVisible(f)) setRequired(f, true);
+        else setRequired(f, false);
+      });
+
+      // Always require email in profile if present (and visible)
+      if (sectionId === "content1") {
+        var email = document.getElementById("id13");
+        if (email && !shouldExcludeRequired(email) && isFieldVisible(email)) setRequired(email, true);
+      }
+    }
+
+    function enforceRequiredNow() {
+      enforceRequiredForSection("content1");
+      enforceRequiredForSection("content4");
+    }
+
+    // ---------- STRONG REQUIRED VALIDATION (stars + inline errors + Next gating) ----------
     function ensureValidationStyles() {
       if (document.getElementById("bnp-required-style")) return;
       var s = document.createElement("style");
@@ -1248,14 +1251,14 @@ Updated: 12/17/2025
       });
     }
 
-    function closestQuestionBlock(el, stepRoot) {
+    function closestQuestionBlock(el) {
       if (!el) return null;
       return (
         el.closest("p[id^='p']") ||
         el.closest(".drg-element") ||
         el.closest(".form-group") ||
         el.closest(".question") ||
-        (stepRoot || document).querySelector("p[id^='p']")
+        null
       );
     }
 
@@ -1272,7 +1275,7 @@ Updated: 12/17/2025
       var wrapped = field.closest && field.closest("label");
       if (wrapped) return wrapped;
 
-      var block = closestQuestionBlock(field, scope);
+      var block = closestQuestionBlock(field);
       if (block) {
         var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
         if (ql) return ql;
@@ -1291,10 +1294,6 @@ Updated: 12/17/2025
       labelEl.appendChild(star);
     }
 
-    function isEmptyValue(v) {
-      return !String(v == null ? "" : v).trim();
-    }
-
     function isRequiredLike(field, block) {
       if (!field) return false;
 
@@ -1303,15 +1302,9 @@ Updated: 12/17/2025
 
       if (block) {
         if (block.querySelector(".req-star, .reqStar, .required-star")) return true;
-
-        var ql = block.querySelector(".questionlabel") || null;
-        var qText = ql ? (text(ql) || "").toLowerCase() : "";
-        if (qText && qText.indexOf("*") !== -1) return true;
-
         if (block.classList && (block.classList.contains("required") || block.classList.contains("req"))) return true;
         if (block.getAttribute && (block.getAttribute("data-required") === "true" || block.getAttribute("aria-required") === "true")) return true;
       }
-
       return false;
     }
 
@@ -1336,22 +1329,20 @@ Updated: 12/17/2025
       });
 
       fields.forEach(function (f) {
-        var block = closestQuestionBlock(f, stepRoot);
+        var block = closestQuestionBlock(f);
         if (!block) return;
 
-        // radio group representative
         if (f.type === "radio" && f.name) {
           var radios = $all("input[type='radio'][name='" + f.name.replace(/'/g, "\\'") + "']", stepRoot).filter(isFieldVisible);
           if (!radios.length) return;
           var rep = radios[0];
-          var b = closestQuestionBlock(rep, stepRoot) || block;
+          var b = closestQuestionBlock(rep) || block;
           if (!isRequiredLike(rep, b)) return;
           var lbl = b.querySelector(".questionlabel label") || getLabelForField(rep, stepRoot);
           ensureReqStarOnLabel(lbl);
           return;
         }
 
-        // checkbox
         if (f.type === "checkbox") {
           if (!isRequiredLike(f, block)) return;
           var lbl2 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
@@ -1359,7 +1350,6 @@ Updated: 12/17/2025
           return;
         }
 
-        // text/select/etc
         if (!isRequiredLike(f, block)) return;
         var lbl3 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
         ensureReqStarOnLabel(lbl3);
@@ -1370,27 +1360,21 @@ Updated: 12/17/2025
       var blocks = [];
       var seen = new Set();
 
-      // blocks containing req-star
       $all(".req-star, .reqStar, .required-star", stepRoot).forEach(function (s) {
-        var b =
-          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
-          null;
+        var b = (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) || null;
         if (b && !seen.has(b)) { seen.add(b); blocks.push(b); }
       });
 
-      // aria-required fields
       $all("[aria-required='true']", stepRoot).forEach(function (f) {
-        var b2 = closestQuestionBlock(f, stepRoot);
+        var b2 = closestQuestionBlock(f);
         if (b2 && !seen.has(b2)) { seen.add(b2); blocks.push(b2); }
       });
 
-      // native [required] fields
       $all("input[required], select[required], textarea[required]", stepRoot).forEach(function (f) {
-        var b3 = closestQuestionBlock(f, stepRoot);
+        var b3 = closestQuestionBlock(f);
         if (b3 && !seen.has(b3)) { seen.add(b3); blocks.push(b3); }
       });
 
-      // blocks explicitly flagged required
       $all("[data-required='true'], .required", stepRoot).forEach(function (n) {
         var b4 = n.closest ? (n.closest("p[id^='p']") || n.closest(".drg-element") || n.closest(".form-group") || n.closest(".question")) : null;
         b4 = b4 || (n.matches && n.matches("p[id^='p'], .drg-element, .form-group, .question") ? n : null);
@@ -1416,7 +1400,6 @@ Updated: 12/17/2025
       var anyRequiredLike = fields.some(function (f) { return isRequiredLike(f, block); });
       if (!anyRequiredLike) return { ok: true };
 
-      // radios
       var radios = fields.filter(function (f) { return f.type === "radio" && f.name; });
       if (radios.length) {
         var groupName = radios[0].name;
@@ -1425,7 +1408,6 @@ Updated: 12/17/2025
         return { ok: anyChecked, focusEl: (group[0] || radios[0] || null), msg: "Please choose an option." };
       }
 
-      // checkboxes
       var cbs = fields.filter(function (f) { return f.type === "checkbox"; });
       if (cbs.length) {
         var anyCbReq = cbs.some(function (c) { return isRequiredLike(c, block); });
@@ -1434,20 +1416,17 @@ Updated: 12/17/2025
         return { ok: okCb, focusEl: (cbs[0] || null), msg: "Please check the box to continue." };
       }
 
-      // text/select/etc
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i];
         if (!isRequiredLike(f, block)) continue;
 
         if (f.tagName === "SELECT") {
           if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
-        } else if (
-          f.type === "email" || f.type === "text" || f.type === "tel" ||
-          f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA"
-        ) {
-          if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
         } else {
-          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+          if (("value" in f) && isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+          if (looksLikeEmailField(f) && !isEmptyValue(f.value) && !isValidEmail(f.value)) {
+            return { ok: false, focusEl: f, msg: "Enter a valid email address." };
+          }
         }
       }
 
@@ -1456,13 +1435,16 @@ Updated: 12/17/2025
 
     function prepareStepValidation(stepId) {
       ensureValidationStyles();
+      enforceRequiredNow();
+
       var root = document.getElementById(stepId);
       if (!root) return;
       markRequiredIndicators(root);
     }
 
-    // Non-mutating validity check for Next gating (no messages/marks)
     function stepIsValidSimple(stepId) {
+      enforceRequiredNow();
+
       var root = document.getElementById(stepId);
       if (!root) return true;
 
@@ -1472,10 +1454,8 @@ Updated: 12/17/2025
         return true;
       });
 
-      // native/aria required direct fields
       for (var i = 0; i < requiredFields.length; i++) {
         var el = requiredFields[i];
-        if (!el) continue;
 
         if (el.type === "radio" && el.name) {
           var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
@@ -1486,10 +1466,10 @@ Updated: 12/17/2025
           if (!el.checked) return false;
         } else {
           if (isEmptyValue(el.value)) return false;
+          if (looksLikeEmailField(el) && !isValidEmail(el.value)) return false;
         }
       }
 
-      // required blocks detected via stars/etc
       var blocks = collectRequiredBlocks(root);
       for (var j = 0; j < blocks.length; j++) {
         var b = blocks[j];
@@ -1501,19 +1481,16 @@ Updated: 12/17/2025
       return true;
     }
 
-    // Mutating validation (shows errors + marks)
     function validateStep(stepId) {
       ensureValidationStyles();
+      enforceRequiredNow();
 
       var root = document.getElementById(stepId);
       if (!root) return { ok: true };
 
-      // Ensure stars exist even if DF didn’t output them
       markRequiredIndicators(root);
-
       clearInvalidMarks(root);
 
-      // 1) Native HTML required attr pass
       var required = $all("input[required], select[required], textarea[required]", root).filter(function (el) {
         if (!el || el.disabled) return false;
         if (!isFieldVisible(el)) return false;
@@ -1529,7 +1506,7 @@ Updated: 12/17/2025
             .some(function (r) { return r.checked; });
 
           if (!any) {
-            var b1 = closestQuestionBlock(el, root) || el;
+            var b1 = closestQuestionBlock(el) || el;
             if (b1 && b1.classList) b1.classList.add("bnp-invalid");
             try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
             var e1 = ensureInlineError(b1);
@@ -1538,7 +1515,7 @@ Updated: 12/17/2025
           }
         } else if (el.type === "checkbox") {
           if (!el.checked) {
-            var b2 = closestQuestionBlock(el, root) || el;
+            var b2 = closestQuestionBlock(el) || el;
             if (b2 && b2.classList) b2.classList.add("bnp-invalid");
             try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
             var e2 = ensureInlineError(b2);
@@ -1547,17 +1524,24 @@ Updated: 12/17/2025
           }
         } else {
           if (isEmptyValue(el.value)) {
-            var b3 = closestQuestionBlock(el, root) || el;
+            var b3 = closestQuestionBlock(el) || el;
             if (b3 && b3.classList) b3.classList.add("bnp-invalid");
             try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
             var e3 = ensureInlineError(b3);
             if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
             return { ok: false, focusEl: el };
           }
+          if (looksLikeEmailField(el) && !isValidEmail(el.value)) {
+            var bE = closestQuestionBlock(el) || el;
+            if (bE && bE.classList) bE.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var eE = ensureInlineError(bE);
+            if (eE) { eE.textContent = "Enter a valid email address."; eE.classList.add("is-on"); }
+            return { ok: false, focusEl: el };
+          }
         }
       }
 
-      // 2) Required-like blocks pass (stars/aria-required/etc)
       var blocks = collectRequiredBlocks(root);
       for (var j = 0; j < blocks.length; j++) {
         var b = blocks[j];
@@ -2177,7 +2161,7 @@ Updated: 12/17/2025
       });
     }
 
-    /* --------- PATCH: Yes/No set with ID-first, TEXT-fallback --------- */
+    /* --------- Yes/No set with ID-first, TEXT-fallback --------- */
     function setYesNoByQuestionText(questionIncludes, yesOrNo) {
       var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
       var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -2235,12 +2219,8 @@ Updated: 12/17/2025
       var okNews = ensure(newsYes, newsYesR, newsNoR);
       var okWc = ensure(weeklyYes, wcYesR, wcNoR);
 
-      if (!okNews) {
-        setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
-      }
-      if (!okWc) {
-        setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
-      }
+      if (!okNews) setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
+      if (!okWc) setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
     }
 
     function attachTileClickSelection() {
@@ -2270,14 +2250,11 @@ Updated: 12/17/2025
 
         var weeklyYes = (kind === "chill");
 
-        // Yes/No product questions
         if (weeklyYes) setNewsAndWeekly(false, true);
         else setNewsAndWeekly(true, false);
 
-        // Weekly Chill Requested Version:
         setWeeklyRequestedVersion(weeklyYes);
 
-        // ACHR Requested Version:
         if (weeklyYes) setAchRequestedVersion("do not want");
         else if (kind === "print") setAchRequestedVersion("print");
         else setAchRequestedVersion("digital");
@@ -2285,7 +2262,6 @@ Updated: 12/17/2025
         if (kind === "fan") {
           clearAllRateRadios();
 
-          // IMPORTANT: Free Fan Only tile -> ACHR requested version MUST be Digital
           setNewsAndWeekly(true, false);
           setAchRequestedVersion("digital");
           setWeeklyRequestedVersion(false);
@@ -2357,7 +2333,6 @@ Updated: 12/17/2025
       actions.style.cssText =
         "display:flex;gap:12px;padding:12px;margin-top:24px;background:#fff;border-top:1px solid #e6e8ee;align-items:center";
 
-      // Center slot so Pay Now sits centered
       actions.innerHTML =
         '<button type="button" class="btn btn-back">Back</button>' +
         '<div class="bnp-action-center" style="flex:1;display:flex;justify-content:center;align-items:center;"></div>' +
@@ -2371,7 +2346,6 @@ Updated: 12/17/2025
         chosenFree = true,
         lastFocus = null;
 
-      // NEW: track whether user has attempted Next on each step (so we don't spam errors immediately)
       var attempted = { content1: false, content4: false };
 
       function placeActions(stepEl) {
@@ -2450,9 +2424,17 @@ Updated: 12/17/2025
 
         ensureSubmitDockCaptured(wrap);
 
-        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"]');
+        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"], button:not([type])');
         if (realBtn) {
+          // Force plain submit, no JS hijack
+          try { realBtn.removeAttribute("onclick"); } catch (e) {}
+          try { realBtn.onclick = null; } catch (e) {}
+          if (realBtn.tagName === "BUTTON") {
+            try { realBtn.setAttribute("type", "submit"); } catch (e) {}
+          }
+
           try { realBtn.value = "Pay Now"; } catch (e) {}
+          try { realBtn.textContent = "Pay Now"; } catch (e) {}
           stylePayNow(realBtn);
         }
 
@@ -2472,7 +2454,6 @@ Updated: 12/17/2025
         actions.dataset.__payInstalled = "1";
       }
 
-      // NEW: Next gating (disable Next until required fields are complete)
       function setNextDisabled(disabled) {
         try { nextBtn.disabled = !!disabled; } catch (e) {}
         try { nextBtn.setAttribute("aria-disabled", disabled ? "true" : "false"); } catch (e) {}
@@ -2482,6 +2463,8 @@ Updated: 12/17/2025
       function gateNextForCurrentStep() {
         if (__nextGateRAF) cancelAnimationFrame(__nextGateRAF);
         __nextGateRAF = requestAnimationFrame(function () {
+          enforceRequiredNow();
+
           if (step === "content1") {
             prepareStepValidation("content1");
             if (attempted.content1) {
@@ -2510,7 +2493,7 @@ Updated: 12/17/2025
         root.dataset.__bnpLiveVal = "1";
 
         var bump = debounce(function () {
-          // only show inline errors live after user attempted Next on that step
+          enforceRequiredNow();
           if (step === stepRootId && ((stepRootId === "content1" && attempted.content1) || (stepRootId === "content4" && attempted.content4))) {
             validateStep(stepRootId);
           }
@@ -2541,7 +2524,6 @@ Updated: 12/17/2025
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
         else if (step === "content6") nextBtn.textContent = "Complete Payment";
 
-        // NEW: wire & gate
         wireLiveValidation("content1");
         wireLiveValidation("content4");
         gateNextForCurrentStep();
@@ -2621,6 +2603,7 @@ Updated: 12/17/2025
 
         attempted.content1 = false;
         prepareStepValidation("content1");
+        enforceRequiredNow();
 
         step = "content1";
         updateButtons();
@@ -2634,6 +2617,7 @@ Updated: 12/17/2025
 
         attempted.content4 = false;
         prepareStepValidation("content4");
+        enforceRequiredNow();
 
         step = "content4";
         updateButtons();
@@ -2642,6 +2626,7 @@ Updated: 12/17/2025
 
       function goToPayment() {
         if (content4) hide(content4);
+        enforceRequiredNow();
         openPaymentModal();
         placeActions(content6);
         step = "content6";
@@ -2664,6 +2649,7 @@ Updated: 12/17/2025
         closePaymentModal();
         hide(actions);
 
+        enforceRequiredNow();
         updateButtons();
         step = "plans";
         scrollToHeaderNow();
@@ -2673,6 +2659,7 @@ Updated: 12/17/2025
         hide(content1);
         if (newsletters) { show(newsletters); placeActions(newsletters); }
         step = "newsletters";
+        enforceRequiredNow();
         updateButtons();
         scrollToHeaderNow();
       }
@@ -2682,6 +2669,7 @@ Updated: 12/17/2025
         show(content1);
         placeActions(content1);
         step = "content1";
+        enforceRequiredNow();
         updateButtons();
         scrollToHeaderNow();
       }
@@ -2697,6 +2685,7 @@ Updated: 12/17/2025
           placeActions(content1);
           step = "content1";
         }
+        enforceRequiredNow();
         updateButtons();
         scrollToHeaderNow();
       }
@@ -2709,6 +2698,8 @@ Updated: 12/17/2025
       });
 
       nextBtn.addEventListener("click", function () {
+        enforceRequiredNow();
+
         if (step === "newsletters") { goToContent1(); return; }
 
         if (step === "content1") {
@@ -2810,7 +2801,11 @@ Updated: 12/17/2025
         if (w) w.style.display = "none";
       } catch (e) {}
 
+      // Final safety: if any legacy markup references checkPayment, keep it harmless
+      if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
+
       step = "plans";
+      enforceRequiredNow();
       updateButtons();
     }
 
@@ -2824,6 +2819,36 @@ Updated: 12/17/2025
       applyPricesNow();
       setupFlowWizard();
 
+      // Enforce required as DF hides/shows fields (country-driven)
+      if (window.MutationObserver) {
+        var t1 = document.getElementById("content1");
+        var t4 = document.getElementById("content4");
+        var mo = new MutationObserver(debounce(enforceRequiredNow, 120));
+        if (t1) mo.observe(t1, { attributes: true, childList: true, subtree: true });
+        if (t4) mo.observe(t4, { attributes: true, childList: true, subtree: true });
+      }
+
+      // Validate on real submit too (Pay Now)
+      var form = document.querySelector("form");
+      if (form && !form.dataset.__bnpSubmitGuard) {
+        form.dataset.__bnpSubmitGuard = "1";
+        form.addEventListener("submit", function (ev) {
+          enforceRequiredNow();
+          var c1 = document.getElementById("content1");
+          var c4 = document.getElementById("content4");
+
+          // Only block for sections that currently have visible required fields
+          var ok1 = c1 ? (stepIsValidSimple("content1") ? true : validateStep("content1").ok) : true;
+          var ok4 = c4 ? (stepIsValidSimple("content4") ? true : validateStep("content4").ok) : true;
+
+          if (!ok1 || !ok4) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return false;
+          }
+        }, true);
+      }
+
       document.addEventListener("click", function (e) {
         var btn = e.target && e.target.closest && e.target.closest("button.btn-next[type='button'], button.btn-next");
         if (!btn) return;
@@ -2832,6 +2857,8 @@ Updated: 12/17/2025
           requestAnimationFrame(scrollToHeaderNow);
         });
       }, true);
+
+      enforceRequiredNow();
     }
 
     onReady(initAll);
@@ -2929,7 +2956,7 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first)
+     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first) (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
@@ -3093,6 +3120,7 @@ Updated: 12/17/2025
 
       if (!items.length && !totals.length) return;
 
+      // hard reset so we never duplicate
       items.forEach(function (el) { el.innerHTML = ""; });
 
       var total = 0;
@@ -3466,377 +3494,3 @@ Updated: 12/17/2025
   })();
 
 })();
-
-
-(function () {
-  "use strict";
-  if (window.__BNP_MASTER_REQUIRED_V2) return;
-  window.__BNP_MASTER_REQUIRED_V2 = true;
-
-  function onReady(fn) {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
-    else fn();
-  }
-  function qs(root, sel) { return (root || document).querySelector(sel); }
-  function qsa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
-  function trim(v) { return (v == null ? "" : String(v)).trim(); }
-
-  function isVisible(el) {
-    if (!el) return false;
-    if (el.disabled) return false;
-
-    // Walk up: if any parent is display:none/visibility:hidden, treat as not visible
-    var p = el;
-    while (p && p !== document.body) {
-      var pcs = window.getComputedStyle(p);
-      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
-      p = p.parentElement;
-    }
-
-    var cs = window.getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden") return false;
-
-    // If it's effectively not taking space and has no offsetParent, treat as hidden
-    if (el.offsetParent === null) {
-      var r = el.getBoundingClientRect();
-      if ((r.width === 0 && r.height === 0) || cs.position !== "fixed") return false;
-    }
-
-    return true;
-  }
-
-  function injectCss() {
-    if (document.getElementById("bnp-required-css")) return;
-    var css = ""
-      + ".bnp-invalid{border:2px solid #d71920 !important;box-shadow:0 0 0 2px rgba(215,25,32,.15) !important;}"
-      + ".bnp-error{margin:8px 0 0;font-size:12px !important;color:#d71920;font-weight:600;}"
-      + ".bnp-section-error{display:none;margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(215,25,32,.35);"
-      + "background:rgba(215,25,32,.06);border-radius:8px;font-size:13px !important;color:#111;}"
-      + ".bnp-section-error strong{color:#d71920;}";
-    var style = document.createElement("style");
-    style.id = "bnp-required-css";
-    style.type = "text/css";
-    style.appendChild(document.createTextNode(css));
-    document.head.appendChild(style);
-  }
-
-  function ensureSectionErrorBox(section) {
-    if (!section) return null;
-    var box = section.querySelector(".bnp-section-error");
-    if (!box) {
-      box = document.createElement("div");
-      box.className = "bnp-section-error";
-      box.setAttribute("role", "alert");
-      var h2 = section.querySelector("h2");
-      if (h2) h2.insertAdjacentElement("afterend", box);
-      else section.insertAdjacentElement("afterbegin", box);
-    }
-    return box;
-  }
-
-  function setFieldRequired(field, required) {
-    if (!field) return;
-    if (required) {
-      field.setAttribute("aria-required", "true");
-      field.dataset.bnpRequired = "1";
-      try {
-        if (field.tagName === "INPUT") {
-          var t = (field.getAttribute("type") || "").toLowerCase();
-          if (t !== "hidden" && t !== "button" && t !== "submit" && t !== "reset") field.required = true;
-        } else if (field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
-          field.required = true;
-        }
-      } catch (e) {}
-    } else {
-      field.removeAttribute("aria-required");
-      delete field.dataset.bnpRequired;
-      try { field.required = false; } catch (e) {}
-    }
-  }
-
-  function clearFieldError(field) {
-    if (!field) return;
-    field.classList.remove("bnp-invalid");
-    var wrap = field.parentElement;
-    if (!wrap) return;
-    var err = wrap.querySelector(":scope > .bnp-error");
-    if (err) err.remove();
-  }
-
-  function showFieldError(field, msg) {
-    if (!field) return;
-    field.classList.add("bnp-invalid");
-    var wrap = field.parentElement;
-    if (!wrap) return;
-    var err = wrap.querySelector(":scope > .bnp-error");
-    if (!err) {
-      err = document.createElement("div");
-      err.className = "bnp-error";
-      wrap.appendChild(err);
-    }
-    err.textContent = msg || "Required";
-  }
-
-  function validateEmail(val) {
-    var v = trim(val);
-    if (!v) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  }
-
-  // Collect fields that must be required for a given section:
-  // - Must be visible
-  // - Exclude phone + sms opt-in for Profile
-  function collectRequiredFields(section) {
-    var fields = qsa(section, "input, select, textarea");
-    var required = [];
-    fields.forEach(function (f) {
-      var type = (f.getAttribute("type") || "").toLowerCase();
-      if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return;
-      if (f.disabled) return;
-      if (!isVisible(f)) return;
-
-      // Exclusions: Cell phone block + SMS opt-in (Profile)
-      if (f.closest("#p124, #ps3")) return;
-      if (f.id === "id124" || f.id === "id974" || f.id === "id124_ccc") return;
-      if (f.id === "smss3") return;
-
-      required.push(f);
-    });
-    return required;
-  }
-
-  function applyRequiredRules() {
-    var profile = document.getElementById("content1");
-    var ship = document.getElementById("content4");
-
-    if (profile) {
-      collectRequiredFields(profile).forEach(function (f) { setFieldRequired(f, true); });
-      var email = qs(profile, "#id13");
-      if (email) setFieldRequired(email, true);
-    }
-
-    if (ship) {
-      collectRequiredFields(ship).forEach(function (f) { setFieldRequired(f, true); });
-    }
-  }
-
-  function validateSection(section) {
-    if (!section) return true;
-
-    var box = ensureSectionErrorBox(section);
-    if (box) { box.style.display = "none"; box.textContent = ""; }
-
-    var required = collectRequiredFields(section);
-    var badCount = 0;
-    var firstBad = null;
-
-    required.forEach(function (f) {
-      clearFieldError(f);
-
-      var val = trim(f.value);
-      if (!val) {
-        badCount++;
-        if (!firstBad) firstBad = f;
-        showFieldError(f, "Required");
-        return;
-      }
-
-      // Email format (covers id13 and any field that looks like email)
-      var looksEmail = (f.id === "id13") || /email/i.test(f.name || "") || /email/i.test(f.id || "");
-      if (looksEmail && !validateEmail(val)) {
-        badCount++;
-        if (!firstBad) firstBad = f;
-        showFieldError(f, "Enter a valid email address");
-      }
-    });
-
-    if (badCount) {
-      if (box) {
-        box.innerHTML = "<strong>Please complete the required fields</strong> before continuing.";
-        box.style.display = "block";
-      }
-      try { firstBad.focus({ preventScroll: false }); } catch (e) {}
-      try { firstBad.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
-      return false;
-    }
-
-    return true;
-  }
-
-  function getActiveStep() {
-    // Find visible content step
-    var candidates = qsa(document, "div[id^='content']");
-    for (var i = 0; i < candidates.length; i++) {
-      if (isVisible(candidates[i])) return candidates[i];
-    }
-    return null;
-  }
-
-  function wireUpNextButtons() {
-    qsa(document, ".btn-next").forEach(function (btn) {
-      if (btn.dataset.bnpWired) return;
-      btn.dataset.bnpWired = "1";
-
-      btn.addEventListener("click", function (ev) {
-        var step = getActiveStep();
-        if (step && !validateSection(step)) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          return false;
-        }
-      }, true);
-    });
-  }
-
-  function wireUpFormSubmit() {
-    var form = document.querySelector("form");
-    if (!form || form.dataset.bnpSubmitWired) return;
-    form.dataset.bnpSubmitWired = "1";
-
-    form.addEventListener("submit", function (ev) {
-      var profile = document.getElementById("content1");
-      var ship = document.getElementById("content4");
-
-      var ok1 = profile ? validateSection(profile) : true;
-      var ok2 = ship ? validateSection(ship) : true;
-
-      if (!ok1 || !ok2) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        return false;
-      }
-
-      // Build cart payload just before submit
-      try { buildCartPayload(); } catch (e) {}
-    }, true);
-  }
-
-  function fixPaymentButtons() {
-    // Replace any "Complete Payment" / "Complete Checkout" element with a clean submit
-    var candidates = qsa(document, "input, button");
-    candidates.forEach(function (el) {
-      var txt = trim(el.value || el.textContent).toLowerCase();
-      if (!txt) return;
-      if (txt.indexOf("complete payment") === -1 && txt.indexOf("complete checkout") === -1) return;
-
-      var repl = document.createElement("input");
-      repl.type = "submit";
-      repl.value = "Pay Now";
-      repl.className = el.className || "";
-      if (el.getAttribute("style")) repl.setAttribute("style", el.getAttribute("style"));
-
-      // IMPORTANT: no onclick, no checkout hijack
-      if (el.parentNode) el.parentNode.replaceChild(repl, el);
-    });
-
-    // Safety: if old markup somewhere still calls checkPayment(), keep it harmless
-    if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
-  }
-
-  function ensureSingleCartField(form) {
-    form = form || document.querySelector("form");
-    if (!form) return null;
-
-    var existing = qsa(form, "#bnp_cart_json");
-    for (var i = 1; i < existing.length; i++) existing[i].remove();
-
-    var field = existing[0];
-    if (!field) {
-      field = document.createElement("input");
-      field.type = "hidden";
-      field.id = "bnp_cart_json";
-      field.name = "bnp_cart_json";
-      form.appendChild(field);
-    }
-    return field;
-  }
-
-  function cssEscapeLite(str) {
-    return String(str).replace(/[^a-zA-Z0-9_\-]/g, function (ch) {
-      return "\\" + ch.charCodeAt(0).toString(16).toUpperCase() + " ";
-    });
-  }
-
-  function safeLabelForInput(input) {
-    if (!input) return "";
-    var id = input.id;
-    if (id) {
-      var lab = document.querySelector("label[for='" + cssEscapeLite(id) + "']");
-      if (lab) return trim(lab.textContent);
-    }
-    var parentLabel = input.closest("label");
-    if (parentLabel) return trim(parentLabel.textContent);
-    var container = input.closest("li, p, div");
-    return container ? trim(container.textContent) : "";
-  }
-
-  function buildCartPayload() {
-    var form = document.querySelector("form");
-    if (!form) return;
-    var field = ensureSingleCartField(form);
-    if (!field) return;
-
-    var scope =
-      document.querySelector(".campaign-placeholder") ||
-      document.querySelector(".standard-rates") ||
-      document.querySelector(".requested-version") ||
-      document.querySelector(".promo-key") ||
-      form;
-
-    var checked = qsa(scope, "input[type='radio']:checked");
-    var items = checked.map(function (r) {
-      return {
-        id: r.id || null,
-        name: r.name || null,
-        value: r.value || null,
-        label: safeLabelForInput(r) || null
-      };
-    }).filter(function (x) {
-      return x.id || x.name || x.value || x.label;
-    });
-
-    field.value = JSON.stringify({
-      source: "bnp_master",
-      ts: new Date().toISOString(),
-      items: items
-    });
-  }
-
-  function wireCartSync() {
-    var form = document.querySelector("form");
-    if (!form || form.dataset.bnpCartWired) return;
-    form.dataset.bnpCartWired = "1";
-
-    form.addEventListener("change", function (e) {
-      var t = e.target;
-      if (t && t.matches && t.matches("input[type='radio']")) {
-        buildCartPayload();
-      }
-    }, true);
-  }
-
-  onReady(function () {
-    injectCss();
-    applyRequiredRules();
-    wireUpNextButtons();
-    wireUpFormSubmit();
-    fixPaymentButtons();
-    wireCartSync();
-
-    // Re-apply required rules whenever DragonForms shows/hides fields (country-driven)
-    var targets = [document.getElementById("content1"), document.getElementById("content4")].filter(Boolean);
-    if (targets.length) {
-      var mo = new MutationObserver(function () {
-        applyRequiredRules();
-        wireUpNextButtons();
-      });
-      targets.forEach(function (t) {
-        mo.observe(t, { attributes: true, childList: true, subtree: true });
-      });
-    }
-
-    // Initial cart payload
-    try { buildCartPayload(); } catch (e) {}
-  });
-})();
-
