@@ -3467,3 +3467,376 @@ Updated: 12/17/2025
 
 })();
 
+
+(function () {
+  "use strict";
+  if (window.__BNP_MASTER_REQUIRED_V2) return;
+  window.__BNP_MASTER_REQUIRED_V2 = true;
+
+  function onReady(fn) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
+    else fn();
+  }
+  function qs(root, sel) { return (root || document).querySelector(sel); }
+  function qsa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function trim(v) { return (v == null ? "" : String(v)).trim(); }
+
+  function isVisible(el) {
+    if (!el) return false;
+    if (el.disabled) return false;
+
+    // Walk up: if any parent is display:none/visibility:hidden, treat as not visible
+    var p = el;
+    while (p && p !== document.body) {
+      var pcs = window.getComputedStyle(p);
+      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
+      p = p.parentElement;
+    }
+
+    var cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+
+    // If it's effectively not taking space and has no offsetParent, treat as hidden
+    if (el.offsetParent === null) {
+      var r = el.getBoundingClientRect();
+      if ((r.width === 0 && r.height === 0) || cs.position !== "fixed") return false;
+    }
+
+    return true;
+  }
+
+  function injectCss() {
+    if (document.getElementById("bnp-required-css")) return;
+    var css = ""
+      + ".bnp-invalid{border:2px solid #d71920 !important;box-shadow:0 0 0 2px rgba(215,25,32,.15) !important;}"
+      + ".bnp-error{margin:8px 0 0;font-size:12px !important;color:#d71920;font-weight:600;}"
+      + ".bnp-section-error{display:none;margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(215,25,32,.35);"
+      + "background:rgba(215,25,32,.06);border-radius:8px;font-size:13px !important;color:#111;}"
+      + ".bnp-section-error strong{color:#d71920;}";
+    var style = document.createElement("style");
+    style.id = "bnp-required-css";
+    style.type = "text/css";
+    style.appendChild(document.createTextNode(css));
+    document.head.appendChild(style);
+  }
+
+  function ensureSectionErrorBox(section) {
+    if (!section) return null;
+    var box = section.querySelector(".bnp-section-error");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "bnp-section-error";
+      box.setAttribute("role", "alert");
+      var h2 = section.querySelector("h2");
+      if (h2) h2.insertAdjacentElement("afterend", box);
+      else section.insertAdjacentElement("afterbegin", box);
+    }
+    return box;
+  }
+
+  function setFieldRequired(field, required) {
+    if (!field) return;
+    if (required) {
+      field.setAttribute("aria-required", "true");
+      field.dataset.bnpRequired = "1";
+      try {
+        if (field.tagName === "INPUT") {
+          var t = (field.getAttribute("type") || "").toLowerCase();
+          if (t !== "hidden" && t !== "button" && t !== "submit" && t !== "reset") field.required = true;
+        } else if (field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
+          field.required = true;
+        }
+      } catch (e) {}
+    } else {
+      field.removeAttribute("aria-required");
+      delete field.dataset.bnpRequired;
+      try { field.required = false; } catch (e) {}
+    }
+  }
+
+  function clearFieldError(field) {
+    if (!field) return;
+    field.classList.remove("bnp-invalid");
+    var wrap = field.parentElement;
+    if (!wrap) return;
+    var err = wrap.querySelector(":scope > .bnp-error");
+    if (err) err.remove();
+  }
+
+  function showFieldError(field, msg) {
+    if (!field) return;
+    field.classList.add("bnp-invalid");
+    var wrap = field.parentElement;
+    if (!wrap) return;
+    var err = wrap.querySelector(":scope > .bnp-error");
+    if (!err) {
+      err = document.createElement("div");
+      err.className = "bnp-error";
+      wrap.appendChild(err);
+    }
+    err.textContent = msg || "Required";
+  }
+
+  function validateEmail(val) {
+    var v = trim(val);
+    if (!v) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+
+  // Collect fields that must be required for a given section:
+  // - Must be visible
+  // - Exclude phone + sms opt-in for Profile
+  function collectRequiredFields(section) {
+    var fields = qsa(section, "input, select, textarea");
+    var required = [];
+    fields.forEach(function (f) {
+      var type = (f.getAttribute("type") || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return;
+      if (f.disabled) return;
+      if (!isVisible(f)) return;
+
+      // Exclusions: Cell phone block + SMS opt-in (Profile)
+      if (f.closest("#p124, #ps3")) return;
+      if (f.id === "id124" || f.id === "id974" || f.id === "id124_ccc") return;
+      if (f.id === "smss3") return;
+
+      required.push(f);
+    });
+    return required;
+  }
+
+  function applyRequiredRules() {
+    var profile = document.getElementById("content1");
+    var ship = document.getElementById("content4");
+
+    if (profile) {
+      collectRequiredFields(profile).forEach(function (f) { setFieldRequired(f, true); });
+      var email = qs(profile, "#id13");
+      if (email) setFieldRequired(email, true);
+    }
+
+    if (ship) {
+      collectRequiredFields(ship).forEach(function (f) { setFieldRequired(f, true); });
+    }
+  }
+
+  function validateSection(section) {
+    if (!section) return true;
+
+    var box = ensureSectionErrorBox(section);
+    if (box) { box.style.display = "none"; box.textContent = ""; }
+
+    var required = collectRequiredFields(section);
+    var badCount = 0;
+    var firstBad = null;
+
+    required.forEach(function (f) {
+      clearFieldError(f);
+
+      var val = trim(f.value);
+      if (!val) {
+        badCount++;
+        if (!firstBad) firstBad = f;
+        showFieldError(f, "Required");
+        return;
+      }
+
+      // Email format (covers id13 and any field that looks like email)
+      var looksEmail = (f.id === "id13") || /email/i.test(f.name || "") || /email/i.test(f.id || "");
+      if (looksEmail && !validateEmail(val)) {
+        badCount++;
+        if (!firstBad) firstBad = f;
+        showFieldError(f, "Enter a valid email address");
+      }
+    });
+
+    if (badCount) {
+      if (box) {
+        box.innerHTML = "<strong>Please complete the required fields</strong> before continuing.";
+        box.style.display = "block";
+      }
+      try { firstBad.focus({ preventScroll: false }); } catch (e) {}
+      try { firstBad.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+      return false;
+    }
+
+    return true;
+  }
+
+  function getActiveStep() {
+    // Find visible content step
+    var candidates = qsa(document, "div[id^='content']");
+    for (var i = 0; i < candidates.length; i++) {
+      if (isVisible(candidates[i])) return candidates[i];
+    }
+    return null;
+  }
+
+  function wireUpNextButtons() {
+    qsa(document, ".btn-next").forEach(function (btn) {
+      if (btn.dataset.bnpWired) return;
+      btn.dataset.bnpWired = "1";
+
+      btn.addEventListener("click", function (ev) {
+        var step = getActiveStep();
+        if (step && !validateSection(step)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return false;
+        }
+      }, true);
+    });
+  }
+
+  function wireUpFormSubmit() {
+    var form = document.querySelector("form");
+    if (!form || form.dataset.bnpSubmitWired) return;
+    form.dataset.bnpSubmitWired = "1";
+
+    form.addEventListener("submit", function (ev) {
+      var profile = document.getElementById("content1");
+      var ship = document.getElementById("content4");
+
+      var ok1 = profile ? validateSection(profile) : true;
+      var ok2 = ship ? validateSection(ship) : true;
+
+      if (!ok1 || !ok2) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
+      }
+
+      // Build cart payload just before submit
+      try { buildCartPayload(); } catch (e) {}
+    }, true);
+  }
+
+  function fixPaymentButtons() {
+    // Replace any "Complete Payment" / "Complete Checkout" element with a clean submit
+    var candidates = qsa(document, "input, button");
+    candidates.forEach(function (el) {
+      var txt = trim(el.value || el.textContent).toLowerCase();
+      if (!txt) return;
+      if (txt.indexOf("complete payment") === -1 && txt.indexOf("complete checkout") === -1) return;
+
+      var repl = document.createElement("input");
+      repl.type = "submit";
+      repl.value = "Pay Now";
+      repl.className = el.className || "";
+      if (el.getAttribute("style")) repl.setAttribute("style", el.getAttribute("style"));
+
+      // IMPORTANT: no onclick, no checkout hijack
+      if (el.parentNode) el.parentNode.replaceChild(repl, el);
+    });
+
+    // Safety: if old markup somewhere still calls checkPayment(), keep it harmless
+    if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
+  }
+
+  function ensureSingleCartField(form) {
+    form = form || document.querySelector("form");
+    if (!form) return null;
+
+    var existing = qsa(form, "#bnp_cart_json");
+    for (var i = 1; i < existing.length; i++) existing[i].remove();
+
+    var field = existing[0];
+    if (!field) {
+      field = document.createElement("input");
+      field.type = "hidden";
+      field.id = "bnp_cart_json";
+      field.name = "bnp_cart_json";
+      form.appendChild(field);
+    }
+    return field;
+  }
+
+  function cssEscapeLite(str) {
+    return String(str).replace(/[^a-zA-Z0-9_\-]/g, function (ch) {
+      return "\\" + ch.charCodeAt(0).toString(16).toUpperCase() + " ";
+    });
+  }
+
+  function safeLabelForInput(input) {
+    if (!input) return "";
+    var id = input.id;
+    if (id) {
+      var lab = document.querySelector("label[for='" + cssEscapeLite(id) + "']");
+      if (lab) return trim(lab.textContent);
+    }
+    var parentLabel = input.closest("label");
+    if (parentLabel) return trim(parentLabel.textContent);
+    var container = input.closest("li, p, div");
+    return container ? trim(container.textContent) : "";
+  }
+
+  function buildCartPayload() {
+    var form = document.querySelector("form");
+    if (!form) return;
+    var field = ensureSingleCartField(form);
+    if (!field) return;
+
+    var scope =
+      document.querySelector(".campaign-placeholder") ||
+      document.querySelector(".standard-rates") ||
+      document.querySelector(".requested-version") ||
+      document.querySelector(".promo-key") ||
+      form;
+
+    var checked = qsa(scope, "input[type='radio']:checked");
+    var items = checked.map(function (r) {
+      return {
+        id: r.id || null,
+        name: r.name || null,
+        value: r.value || null,
+        label: safeLabelForInput(r) || null
+      };
+    }).filter(function (x) {
+      return x.id || x.name || x.value || x.label;
+    });
+
+    field.value = JSON.stringify({
+      source: "bnp_master",
+      ts: new Date().toISOString(),
+      items: items
+    });
+  }
+
+  function wireCartSync() {
+    var form = document.querySelector("form");
+    if (!form || form.dataset.bnpCartWired) return;
+    form.dataset.bnpCartWired = "1";
+
+    form.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t && t.matches && t.matches("input[type='radio']")) {
+        buildCartPayload();
+      }
+    }, true);
+  }
+
+  onReady(function () {
+    injectCss();
+    applyRequiredRules();
+    wireUpNextButtons();
+    wireUpFormSubmit();
+    fixPaymentButtons();
+    wireCartSync();
+
+    // Re-apply required rules whenever DragonForms shows/hides fields (country-driven)
+    var targets = [document.getElementById("content1"), document.getElementById("content4")].filter(Boolean);
+    if (targets.length) {
+      var mo = new MutationObserver(function () {
+        applyRequiredRules();
+        wireUpNextButtons();
+      });
+      targets.forEach(function (t) {
+        mo.observe(t, { attributes: true, childList: true, subtree: true });
+      });
+    }
+
+    // Initial cart payload
+    try { buildCartPayload(); } catch (e) {}
+  });
+})();
+
