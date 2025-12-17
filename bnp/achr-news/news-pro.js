@@ -1200,7 +1200,7 @@ Updated: 12/17/2025
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
 
-    // ---------- STRONG REQUIRED VALIDATION (NEW) ----------
+    // ---------- STRONG REQUIRED VALIDATION (UPGRADED: stars + inline errors + supports Next gating) ----------
     function ensureValidationStyles() {
       if (document.getElementById("bnp-required-style")) return;
       var s = document.createElement("style");
@@ -1208,6 +1208,30 @@ Updated: 12/17/2025
       s.textContent = `
         .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
         .bnp-invalid input, .bnp-invalid select, .bnp-invalid textarea { border-color: #b00000 !important; }
+
+        .bnp-inline-error {
+          display:none;
+          margin-top:6px;
+          font-size:12px;
+          line-height:1.35;
+          color:#b00000;
+          font-weight:600;
+        }
+        .bnp-inline-error.is-on { display:block; }
+
+        .req-star, .reqStar, .required-star, .bnp-req-star {
+          display:inline !important;
+          color:#b00000 !important;
+          font-weight:700 !important;
+          margin-left:4px !important;
+        }
+
+        .nl-actions .btn[disabled]{
+          opacity:.45 !important;
+          cursor:not-allowed !important;
+          pointer-events:none !important;
+          filter:grayscale(0.2);
+        }
       `;
       document.head.appendChild(s);
     }
@@ -1215,6 +1239,13 @@ Updated: 12/17/2025
     function clearInvalidMarks(stepRoot) {
       if (!stepRoot) return;
       $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
+      $all(".bnp-inline-error", stepRoot).forEach(function (e) {
+        e.classList.remove("is-on");
+        e.textContent = "";
+      });
+      $all("input,select,textarea", stepRoot).forEach(function (el) {
+        try { el.removeAttribute("aria-invalid"); } catch (e) {}
+      });
     }
 
     function closestQuestionBlock(el, stepRoot) {
@@ -1228,58 +1259,261 @@ Updated: 12/17/2025
       );
     }
 
+    function getLabelForField(field, scope) {
+      if (!field) return null;
+
+      if (field.id) {
+        var lbl = (scope || document).querySelector("label[for='" + field.id + "']");
+        if (lbl) return lbl;
+        lbl = document.querySelector("label[for='" + field.id + "']");
+        if (lbl) return lbl;
+      }
+
+      var wrapped = field.closest && field.closest("label");
+      if (wrapped) return wrapped;
+
+      var block = closestQuestionBlock(field, scope);
+      if (block) {
+        var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
+        if (ql) return ql;
+      }
+
+      return null;
+    }
+
+    function ensureReqStarOnLabel(labelEl) {
+      if (!labelEl) return;
+      if (labelEl.querySelector(".req-star, .reqStar, .required-star, .bnp-req-star")) return;
+
+      var star = document.createElement("span");
+      star.className = "bnp-req-star";
+      star.textContent = "*";
+      labelEl.appendChild(star);
+    }
+
     function isEmptyValue(v) {
       return !String(v == null ? "" : v).trim();
     }
 
-    function validateQuestionBlock(block) {
+    function isRequiredLike(field, block) {
+      if (!field) return false;
+
+      if (field.required) return true;
+      if ((field.getAttribute && field.getAttribute("aria-required")) === "true") return true;
+
+      if (block) {
+        if (block.querySelector(".req-star, .reqStar, .required-star")) return true;
+
+        var ql = block.querySelector(".questionlabel") || null;
+        var qText = ql ? (text(ql) || "").toLowerCase() : "";
+        if (qText && qText.indexOf("*") !== -1) return true;
+
+        if (block.classList && (block.classList.contains("required") || block.classList.contains("req"))) return true;
+        if (block.getAttribute && (block.getAttribute("data-required") === "true" || block.getAttribute("aria-required") === "true")) return true;
+      }
+
+      return false;
+    }
+
+    function ensureInlineError(block) {
+      if (!block) return null;
+      var e = block.querySelector(".bnp-inline-error");
+      if (e) return e;
+
+      e = document.createElement("div");
+      e.className = "bnp-inline-error";
+      block.appendChild(e);
+      return e;
+    }
+
+    function markRequiredIndicators(stepRoot) {
+      if (!stepRoot) return;
+
+      var fields = $all("input, select, textarea", stepRoot).filter(function (f) {
+        if (!f || f.disabled) return false;
+        if (!isFieldVisible(f)) return false;
+        return true;
+      });
+
+      fields.forEach(function (f) {
+        var block = closestQuestionBlock(f, stepRoot);
+        if (!block) return;
+
+        // radio group representative
+        if (f.type === "radio" && f.name) {
+          var radios = $all("input[type='radio'][name='" + f.name.replace(/'/g, "\\'") + "']", stepRoot).filter(isFieldVisible);
+          if (!radios.length) return;
+          var rep = radios[0];
+          var b = closestQuestionBlock(rep, stepRoot) || block;
+          if (!isRequiredLike(rep, b)) return;
+          var lbl = b.querySelector(".questionlabel label") || getLabelForField(rep, stepRoot);
+          ensureReqStarOnLabel(lbl);
+          return;
+        }
+
+        // checkbox
+        if (f.type === "checkbox") {
+          if (!isRequiredLike(f, block)) return;
+          var lbl2 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
+          ensureReqStarOnLabel(lbl2);
+          return;
+        }
+
+        // text/select/etc
+        if (!isRequiredLike(f, block)) return;
+        var lbl3 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
+        ensureReqStarOnLabel(lbl3);
+      });
+    }
+
+    function collectRequiredBlocks(stepRoot) {
+      var blocks = [];
+      var seen = new Set();
+
+      // blocks containing req-star
+      $all(".req-star, .reqStar, .required-star", stepRoot).forEach(function (s) {
+        var b =
+          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
+          null;
+        if (b && !seen.has(b)) { seen.add(b); blocks.push(b); }
+      });
+
+      // aria-required fields
+      $all("[aria-required='true']", stepRoot).forEach(function (f) {
+        var b2 = closestQuestionBlock(f, stepRoot);
+        if (b2 && !seen.has(b2)) { seen.add(b2); blocks.push(b2); }
+      });
+
+      // native [required] fields
+      $all("input[required], select[required], textarea[required]", stepRoot).forEach(function (f) {
+        var b3 = closestQuestionBlock(f, stepRoot);
+        if (b3 && !seen.has(b3)) { seen.add(b3); blocks.push(b3); }
+      });
+
+      // blocks explicitly flagged required
+      $all("[data-required='true'], .required", stepRoot).forEach(function (n) {
+        var b4 = n.closest ? (n.closest("p[id^='p']") || n.closest(".drg-element") || n.closest(".form-group") || n.closest(".question")) : null;
+        b4 = b4 || (n.matches && n.matches("p[id^='p'], .drg-element, .form-group, .question") ? n : null);
+        if (b4 && !seen.has(b4)) { seen.add(b4); blocks.push(b4); }
+      });
+
+      return blocks;
+    }
+
+    function validateQuestionBlock(block, stepRoot) {
       if (!block) return { ok: true };
 
       var fields = $all("input, select, textarea", block).filter(function (el) {
         if (!el) return false;
         if (!isFieldVisible(el)) return false;
+        if (el.disabled) return false;
+        if (el.type === "hidden") return false;
         return true;
       });
 
       if (!fields.length) return { ok: true };
 
-      // If there is ANY checked radio/checkbox in the block, it's ok.
-      var radios = fields.filter(function (f) { return f.type === "radio"; });
+      var anyRequiredLike = fields.some(function (f) { return isRequiredLike(f, block); });
+      if (!anyRequiredLike) return { ok: true };
+
+      // radios
+      var radios = fields.filter(function (f) { return f.type === "radio" && f.name; });
       if (radios.length) {
-        var anyChecked = radios.some(function (r) { return r.checked; });
-        return { ok: anyChecked, focusEl: (radios[0] || null) };
+        var groupName = radios[0].name;
+        var group = $all("input[type='radio'][name='" + groupName.replace(/'/g, "\\'") + "']", stepRoot || document).filter(isFieldVisible);
+        var anyChecked = group.some(function (r) { return r.checked; });
+        return { ok: anyChecked, focusEl: (group[0] || radios[0] || null), msg: "Please choose an option." };
       }
 
+      // checkboxes
       var cbs = fields.filter(function (f) { return f.type === "checkbox"; });
       if (cbs.length) {
-        var anyCb = cbs.some(function (c) { return c.checked; });
-        return { ok: anyCb, focusEl: (cbs[0] || null) };
+        var anyCbReq = cbs.some(function (c) { return isRequiredLike(c, block); });
+        if (!anyCbReq) return { ok: true };
+        var okCb = cbs.every(function (c) { return !isRequiredLike(c, block) || c.checked; });
+        return { ok: okCb, focusEl: (cbs[0] || null), msg: "Please check the box to continue." };
       }
 
-      // Otherwise check text/select/textarea
+      // text/select/etc
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i];
+        if (!isRequiredLike(f, block)) continue;
+
         if (f.tagName === "SELECT") {
-          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
-        } else if (f.type === "email" || f.type === "text" || f.type === "tel" || f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA") {
-          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+        } else if (
+          f.type === "email" || f.type === "text" || f.type === "tel" ||
+          f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA"
+        ) {
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
         } else {
-          // fallback
-          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f };
+          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
         }
       }
+
       return { ok: true };
     }
 
+    function prepareStepValidation(stepId) {
+      ensureValidationStyles();
+      var root = document.getElementById(stepId);
+      if (!root) return;
+      markRequiredIndicators(root);
+    }
+
+    // Non-mutating validity check for Next gating (no messages/marks)
+    function stepIsValidSimple(stepId) {
+      var root = document.getElementById(stepId);
+      if (!root) return true;
+
+      var requiredFields = $all("input[required], select[required], textarea[required], [aria-required='true']", root).filter(function (el) {
+        if (!el || el.disabled) return false;
+        if (!isFieldVisible(el)) return false;
+        return true;
+      });
+
+      // native/aria required direct fields
+      for (var i = 0; i < requiredFields.length; i++) {
+        var el = requiredFields[i];
+        if (!el) continue;
+
+        if (el.type === "radio" && el.name) {
+          var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
+            .filter(isFieldVisible)
+            .some(function (r) { return r.checked; });
+          if (!any) return false;
+        } else if (el.type === "checkbox") {
+          if (!el.checked) return false;
+        } else {
+          if (isEmptyValue(el.value)) return false;
+        }
+      }
+
+      // required blocks detected via stars/etc
+      var blocks = collectRequiredBlocks(root);
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (!b || !isVisible(b)) continue;
+        var res = validateQuestionBlock(b, root);
+        if (!res.ok) return false;
+      }
+
+      return true;
+    }
+
+    // Mutating validation (shows errors + marks)
     function validateStep(stepId) {
       ensureValidationStyles();
 
       var root = document.getElementById(stepId);
       if (!root) return { ok: true };
 
+      // Ensure stars exist even if DF didn’t output them
+      markRequiredIndicators(root);
+
       clearInvalidMarks(root);
 
-      // 1) HTML5 required attr pass
+      // 1) Native HTML required attr pass
       var required = $all("input[required], select[required], textarea[required]", root).filter(function (el) {
         if (!el || el.disabled) return false;
         if (!isFieldVisible(el)) return false;
@@ -1288,51 +1522,55 @@ Updated: 12/17/2025
 
       for (var i = 0; i < required.length; i++) {
         var el = required[i];
+
         if (el.type === "radio" && el.name) {
-          var any = $all('input[type="radio"][name="' + el.name + '"]', root).filter(isFieldVisible).some(function (r) { return r.checked; });
+          var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
+            .filter(isFieldVisible)
+            .some(function (r) { return r.checked; });
+
           if (!any) {
             var b1 = closestQuestionBlock(el, root) || el;
             if (b1 && b1.classList) b1.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e1 = ensureInlineError(b1);
+            if (e1) { e1.textContent = "Please choose an option."; e1.classList.add("is-on"); }
             return { ok: false, focusEl: el };
           }
         } else if (el.type === "checkbox") {
           if (!el.checked) {
             var b2 = closestQuestionBlock(el, root) || el;
             if (b2 && b2.classList) b2.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e2 = ensureInlineError(b2);
+            if (e2) { e2.textContent = "Please check the box to continue."; e2.classList.add("is-on"); }
             return { ok: false, focusEl: el };
           }
         } else {
           if (isEmptyValue(el.value)) {
             var b3 = closestQuestionBlock(el, root) || el;
             if (b3 && b3.classList) b3.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e3 = ensureInlineError(b3);
+            if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
             return { ok: false, focusEl: el };
           }
         }
       }
 
-      // 2) DragonForms "required star" pass
-      var starNodes = $all(".req-star, .reqStar, .required-star", root);
-      var blocks = [];
-      var seen = new Set();
-
-      starNodes.forEach(function (s) {
-        var block =
-          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
-          null;
-        if (block && !seen.has(block)) {
-          seen.add(block);
-          blocks.push(block);
-        }
-      });
-
+      // 2) Required-like blocks pass (stars/aria-required/etc)
+      var blocks = collectRequiredBlocks(root);
       for (var j = 0; j < blocks.length; j++) {
         var b = blocks[j];
-        // Skip blocks that are not visible
-        if (!isVisible(b)) continue;
+        if (!b || !isVisible(b)) continue;
 
-        var res = validateQuestionBlock(b);
+        var res = validateQuestionBlock(b, root);
         if (!res.ok) {
           if (b.classList) b.classList.add("bnp-invalid");
+          if (res.focusEl) {
+            try { res.focusEl.setAttribute("aria-invalid", "true"); } catch (e) {}
+          }
+          var ee = ensureInlineError(b);
+          if (ee) { ee.textContent = res.msg || "This field is required."; ee.classList.add("is-on"); }
           return { ok: false, focusEl: res.focusEl || (b.querySelector("input,select,textarea") || b) };
         }
       }
@@ -1729,8 +1967,6 @@ Updated: 12/17/2025
       if (!hostEl) return false;
 
       var want = _wantRVLabel(kind);
-
-      // Prefer labels (more stable), but fall back to any radios
       var radios = $all("input[type='radio']", hostEl);
       if (!radios.length) return false;
 
@@ -1738,7 +1974,7 @@ Updated: 12/17/2025
         if (!r) return null;
         var lbl = null;
         if (r.id) lbl = hostEl.querySelector("label[for='" + r.id + "']");
-        if (!lbl) lbl = document.querySelector("label[for='" + r.id + "']");
+        if (!lbl && r.id) lbl = document.querySelector("label[for='" + r.id + "']");
         return lbl;
       }
 
@@ -1748,7 +1984,6 @@ Updated: 12/17/2025
         var t = _normRVLabel(text(lbl) || "");
         if (!t) continue;
 
-        // Exact match first, then tolerant match
         if (t === want || t.indexOf(want) !== -1) {
           try { r.click(); } catch (e) {}
           r.checked = true;
@@ -1766,17 +2001,14 @@ Updated: 12/17/2025
 
       var out = { achr: null, wc: null };
 
-      // Your new explicit wrappers (preferred)
       out.achr = document.querySelector(".achr-requested-version") || null;
       out.wc   = document.querySelector(".wc-requested-version") || null;
       if (out.achr && out.wc) return (__RV_HOSTS_CACHE = out);
 
-      // Heuristic fallback (works even if wrappers aren’t present)
       var scopes = $all(
         ".achr-requested-version, .wc-requested-version, .requested-version, span.drg-element-type-requested-version, div.drg-element-type-requested-version"
       );
 
-      // If we didn't find wrappers, try to classify the two RV blocks by what labels they contain
       $all(".requested-version span.drg-element-type-requested-version, .requested-version div.drg-element-type-requested-version").forEach(function (sp) {
         scopes.push(sp);
       });
@@ -1795,13 +2027,11 @@ Updated: 12/17/2025
         var hasDigital = labels.indexOf("digital") >= 0;
         var hasDoNot = labels.indexOf("do not want") >= 0;
 
-        // Weekly Chill RV is only: Digital + Do not want
         if (!out.wc && hasDigital && hasDoNot && !hasPrint && !hasBoth && !hasNoPref && labels.length <= 2) {
           out.wc = sp;
           return;
         }
 
-        // ACHR RV has Print/Both/No Preference (full set)
         if (!out.achr && (hasPrint || hasBoth || hasNoPref)) {
           out.achr = sp;
           return;
@@ -1952,7 +2182,6 @@ Updated: 12/17/2025
       var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
       var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-      // Find a questionlabel span or p that contains the question; then use the first radio name in that block
       var candidates = $all(".questionlabel, p, div, span").filter(function (n) {
         var t = (text(n) || "").toLowerCase().replace(/\s+/g, " ").trim();
         return t && t.indexOf(qNeed) !== -1;
@@ -1988,7 +2217,6 @@ Updated: 12/17/2025
     }
 
     function setNewsAndWeekly(newsYes, weeklyYes) {
-      // ID-first (when present)
       var newsYesR = document.getElementById("optid3309_1"), newsNoR = document.getElementById("optid3309_2");
       var wcYesR = document.getElementById("optid3934_1"), wcNoR = document.getElementById("optid3934_2");
 
@@ -2007,13 +2235,10 @@ Updated: 12/17/2025
       var okNews = ensure(newsYes, newsYesR, newsNoR);
       var okWc = ensure(weeklyYes, wcYesR, wcNoR);
 
-      // Text fallback (NO IDs)
       if (!okNews) {
-        // just look for "subscription to the achr news"
         setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
       }
       if (!okWc) {
-        // just look for "weekly chill"
         setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
       }
     }
@@ -2050,14 +2275,9 @@ Updated: 12/17/2025
         else setNewsAndWeekly(true, false);
 
         // Weekly Chill Requested Version:
-        // - Weekly Chill = Digital
-        // - Anything else = Do not want
         setWeeklyRequestedVersion(weeklyYes);
 
         // ACHR Requested Version:
-        // - If Weekly Chill selected => Do not want
-        // - Else Print tile => Print
-        // - Else => Digital
         if (weeklyYes) setAchRequestedVersion("do not want");
         else if (kind === "print") setAchRequestedVersion("print");
         else setAchRequestedVersion("digital");
@@ -2065,8 +2285,8 @@ Updated: 12/17/2025
         if (kind === "fan") {
           clearAllRateRadios();
 
-          // Fan-only should force ACHR Requested Version to DIGITAL (per requirement),
-          // and Weekly Chill to Do not want.
+          // IMPORTANT: Free Fan Only tile -> ACHR requested version MUST be Digital
+          setNewsAndWeekly(true, false);
           setAchRequestedVersion("digital");
           setWeeklyRequestedVersion(false);
 
@@ -2150,6 +2370,9 @@ Updated: 12/17/2025
         chosenKind = null,
         chosenFree = true,
         lastFocus = null;
+
+      // NEW: track whether user has attempted Next on each step (so we don't spam errors immediately)
+      var attempted = { content1: false, content4: false };
 
       function placeActions(stepEl) {
         var target = stepEl ? stepEl.querySelector(".flow-actions") : null;
@@ -2249,6 +2472,56 @@ Updated: 12/17/2025
         actions.dataset.__payInstalled = "1";
       }
 
+      // NEW: Next gating (disable Next until required fields are complete)
+      function setNextDisabled(disabled) {
+        try { nextBtn.disabled = !!disabled; } catch (e) {}
+        try { nextBtn.setAttribute("aria-disabled", disabled ? "true" : "false"); } catch (e) {}
+      }
+
+      var __nextGateRAF = null;
+      function gateNextForCurrentStep() {
+        if (__nextGateRAF) cancelAnimationFrame(__nextGateRAF);
+        __nextGateRAF = requestAnimationFrame(function () {
+          if (step === "content1") {
+            prepareStepValidation("content1");
+            if (attempted.content1) {
+              var r1 = validateStep("content1");
+              setNextDisabled(!r1.ok);
+            } else {
+              setNextDisabled(!stepIsValidSimple("content1"));
+            }
+          } else if (step === "content4") {
+            prepareStepValidation("content4");
+            if (attempted.content4) {
+              var r4 = validateStep("content4");
+              setNextDisabled(!r4.ok);
+            } else {
+              setNextDisabled(!stepIsValidSimple("content4"));
+            }
+          } else {
+            setNextDisabled(false);
+          }
+        });
+      }
+
+      function wireLiveValidation(stepRootId) {
+        var root = document.getElementById(stepRootId);
+        if (!root || root.dataset.__bnpLiveVal === "1") return;
+        root.dataset.__bnpLiveVal = "1";
+
+        var bump = debounce(function () {
+          // only show inline errors live after user attempted Next on that step
+          if (step === stepRootId && ((stepRootId === "content1" && attempted.content1) || (stepRootId === "content4" && attempted.content4))) {
+            validateStep(stepRootId);
+          }
+          gateNextForCurrentStep();
+        }, 140);
+
+        root.addEventListener("input", bump, true);
+        root.addEventListener("change", bump, true);
+        root.addEventListener("blur", bump, true);
+      }
+
       function updateButtons() {
         if (step === "plans") {
           hide(actions);
@@ -2267,6 +2540,11 @@ Updated: 12/17/2025
         if (step === "newsletters" || step === "content1") nextBtn.textContent = "Next";
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
         else if (step === "content6") nextBtn.textContent = "Complete Payment";
+
+        // NEW: wire & gate
+        wireLiveValidation("content1");
+        wireLiveValidation("content4");
+        gateNextForCurrentStep();
       }
 
       function preloadPaymentStep() {
@@ -2340,6 +2618,10 @@ Updated: 12/17/2025
         if (newsletters) hide(newsletters);
         show(content1);
         placeActions(content1);
+
+        attempted.content1 = false;
+        prepareStepValidation("content1");
+
         step = "content1";
         updateButtons();
         scrollToHeaderNow();
@@ -2349,6 +2631,10 @@ Updated: 12/17/2025
         hide(content1);
         if (content4) show(content4);
         if (content4) placeActions(content4);
+
+        attempted.content4 = false;
+        prepareStepValidation("content4");
+
         step = "content4";
         updateButtons();
         scrollToHeaderNow();
@@ -2428,6 +2714,8 @@ Updated: 12/17/2025
         if (step === "content1") {
           var v1 = validateStep("content1");
           if (!v1.ok) {
+            attempted.content1 = true;
+            gateNextForCurrentStep();
             alert("Please complete all required Profile fields.");
             try {
               if (v1.focusEl && v1.focusEl.scrollIntoView) v1.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2444,6 +2732,8 @@ Updated: 12/17/2025
         if (step === "content4") {
           var v4 = validateStep("content4");
           if (!v4.ok) {
+            attempted.content4 = true;
+            gateNextForCurrentStep();
             alert("Please complete all required Shipping fields.");
             try {
               if (v4.focusEl && v4.focusEl.scrollIntoView) v4.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2515,7 +2805,6 @@ Updated: 12/17/2025
       preloadPaymentStep();
       hide(actions);
 
-      // Hide original submit while content6 preloaded/hidden
       try {
         var w = findOriginalPaymentSubmitWrapper();
         if (w) w.style.display = "none";
@@ -3177,3 +3466,4 @@ Updated: 12/17/2025
   })();
 
 })();
+
