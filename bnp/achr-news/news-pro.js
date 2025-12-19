@@ -19,10 +19,6 @@
    - CART force-sync (original Section 3) + Cart Summary Sync add-on
    - ACHR Chill monthly hide patch
    - Campaign quoted text -> tile fine print
-
-   FIXES IN THIS VERSION:
-   - Payment step now MOVES the real DF submit container (#submitbtn) into the payment modal action bar (no proxy).
-   - Cart price now updates from the SELECTED RADIO more reliably (term2/term3/month text parsing + per fallback).
 ===================================================================================== */
 
 (function () {
@@ -1577,6 +1573,7 @@
       if (y) y.textContent = new Date().getFullYear();
     }
 
+    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
     function selectRequestedVersion(kind) {
       var container = $(".requested-version");
       if (!container) return;
@@ -1623,9 +1620,9 @@
       if (!kind) return null;
 
       var region = "usa";
-      if (/\bCANprod\b/i.test(cls) || /canada|canprod/.test(lower)) region = "can";
-      else if (/\bINTprod\b/i.test(cls) || /international|intprod/.test(lower)) region = "int";
-      else if (/\bUSAPROD\b/i.test(cls) || /united\s*states|usa|usaprod/.test(lower)) region = "usa";
+      if (/\bCANprod\b/i.test(cls) || /canprod/.test(lower)) region = "can";
+      else if (/\bINTprod\b/i.test(cls) || /intprod/.test(lower)) region = "int";
+      else if (/\bUSAPROD\b/i.test(cls) || /usaprod/.test(lower)) region = "usa";
 
       var period = null;
       if (/\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls)) period = "monthly";
@@ -1800,7 +1797,7 @@
       }, true);
     }
 
-    /* ---------- FLOW WIZARD (UPDATED: MOVE REAL #submitbtn INTO MODAL) ---------- */
+    /* ---------- FLOW WIZARD (PAYMENT: move ORIGINAL submit into modal bar, centered) ---------- */
     function setupFlowWizard() {
       if (!window.__BNP_FLOW_WIZ_RETRY) window.__BNP_FLOW_WIZ_RETRY = 0;
 
@@ -1848,12 +1845,17 @@
         try { form.submit(); } catch (e) {}
       }
 
+      // Action bar
       var actions = document.createElement("div");
       actions.className = "nl-actions";
       actions.style.cssText =
         "display:flex;gap:12px;padding:12px;margin-top:24px;background:#fff;border-top:1px solid #e6e8ee;align-items:center";
+
+      // IMPORTANT: center slot exists so Pay Now sits centered (not right)
       actions.innerHTML =
-        '<button type="button" class="btn btn-back">Back</button><div style="flex:1"></div><button type="button" class="btn btn-next">Next</button>';
+        '<button type="button" class="btn btn-back">Back</button>' +
+        '<div class="bnp-action-center" style="flex:1;display:flex;justify-content:center;align-items:center;"></div>' +
+        '<button type="button" class="btn btn-next">Next</button>';
 
       var backBtn = actions.querySelector(".btn-back");
       var nextBtn = actions.querySelector(".btn-next");
@@ -1881,87 +1883,100 @@
         el.style.border = "none";
         el.style.borderRadius = "5px";
         el.style.textTransform = "uppercase";
-        el.style.marginTop = "20px";
-        el.style.display = "block";
-        el.style.marginLeft = "auto";
-        el.style.marginRight = "auto";
+        el.style.marginTop = "0";
+        el.style.display = "inline-block";
         el.style.fontWeight = "bold";
         el.style.boxShadow = "rgba(0, 0, 0, 0.1) 0px 4px 6px";
         el.style.transition = "background-color 0.3s";
       }
 
-      function ensureFormId(form) {
-        if (!form) return null;
-        if (!form.id) form.id = "bnp_form_" + Math.random().toString(36).slice(2);
-        return form.id;
+      // Track original submit wrapper location so we can restore it when leaving payment
+      var submitDock = { wrap: null, parent: null, nextSibling: null };
+
+      function findOriginalPaymentSubmitWrapper() {
+        if (!content6) return null;
+        // Your DF submit wrapper
+        var wrap = content6.querySelector("#submitbtn");
+        if (wrap) return wrap;
+
+        // Fallback: find a visible submit input/button and use its closest wrapper
+        var btn =
+          content6.querySelector('input[type="submit"]') ||
+          content6.querySelector('button[type="submit"]') ||
+          null;
+        if (!btn) return null;
+
+        return btn.closest("div") || btn.parentNode || null;
       }
 
-      function findSubmitWrap() {
-        return (content6 && content6.querySelector("#submitbtn")) || document.getElementById("submitbtn") || null;
-      }
-
-      function captureHome(wrap) {
-        if (!wrap || wrap.dataset.__bnpHomeCaptured === "1") return;
-        var ph = document.createElement("span");
-        ph.id = "bnp-submitbtn-home";
-        ph.style.display = "none";
-        wrap.parentNode.insertBefore(ph, wrap);
-        wrap.dataset.__bnpHomeCaptured = "1";
-      }
-
-      function moveRealSubmitIntoPaymentBar() {
-        if (!content6) return;
-        if (actions.dataset.__payMoved === "1") return;
-
-        var wrap = findSubmitWrap();
+      function ensureSubmitDockCaptured(wrap) {
         if (!wrap) return;
+        if (submitDock.wrap) return;
+        submitDock.wrap = wrap;
+        submitDock.parent = wrap.parentNode || null;
+        submitDock.nextSibling = wrap.nextSibling || null;
+      }
 
-        captureHome(wrap);
+      function restorePaymentSubmitToOriginalSpot() {
+        if (!submitDock.wrap || !submitDock.parent) return;
+        if (!document.body.contains(submitDock.parent)) return;
 
-        var submitEl = wrap.querySelector('input[type="submit"], button[type="submit"]');
-        if (!submitEl) return;
-
-        // Keep DF onclick="return checkPayment();" exactly as-is. Just relabel + style.
-        try { if (submitEl.tagName.toLowerCase() === "input") submitEl.value = "Pay Now"; } catch (e) {}
-        stylePayNow(submitEl);
-
-        // Ensure it submits the correct form even after moving
-        var form =
-          (content6 && (content6.closest && content6.closest("form"))) ||
-          (wrap.closest && wrap.closest("form")) ||
-          document.querySelector("form");
-        var fid = ensureFormId(form);
-        if (fid) {
-          try { submitEl.setAttribute("form", fid); } catch (e) {}
+        // If it's already back inside content6, nothing to do
+        if (submitDock.wrap.closest && submitDock.wrap.closest("#content6")) {
+          // Still restore position if needed
         }
 
-        // Hide wizard Next on payment step
-        try { nextBtn.style.display = "none"; } catch (e) {}
-
-        // Move the entire DF submit wrapper into the action bar
-        actions.appendChild(wrap);
-
-        // Make wrapper sit nicely in the bar
         try {
-          wrap.style.marginLeft = "auto";
-          wrap.style.marginTop = "0";
+          if (submitDock.nextSibling && submitDock.nextSibling.parentNode === submitDock.parent) {
+            submitDock.parent.insertBefore(submitDock.wrap, submitDock.nextSibling);
+          } else {
+            submitDock.parent.appendChild(submitDock.wrap);
+          }
         } catch (e) {}
 
-        actions.dataset.__payMoved = "1";
+        // Re-hide original when not on payment step (so it doesn't show in hidden content6)
+        try { submitDock.wrap.style.display = "none"; } catch (e) {}
       }
 
-      function restoreRealSubmitHome() {
-        if (!actions.dataset.__payMoved) return;
+      // Move the REAL DF submit into the action bar center slot (no proxy, no right alignment)
+      function moveRealSubmitIntoPaymentBar() {
+        if (!content6) return;
+        var centerSlot = actions.querySelector(".bnp-action-center");
+        if (!centerSlot) return;
 
-        var wrap = actions.querySelector("#submitbtn");
-        var home = document.getElementById("bnp-submitbtn-home");
+        // Only once per payment-open cycle
+        if (actions.dataset.__payInstalled === "1") return;
 
-        if (wrap && home && home.parentNode) {
-          home.parentNode.insertBefore(wrap, home);
+        var wrap = findOriginalPaymentSubmitWrapper();
+        if (!wrap) return;
+
+        ensureSubmitDockCaptured(wrap);
+
+        // find the actual submit input inside wrapper
+        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"]');
+        if (realBtn) {
+          // Keep native handler (onclick checkPayment) intact
+          try { realBtn.value = "Pay Now"; } catch (e) {}
+          stylePayNow(realBtn);
         }
 
-        try { nextBtn.style.display = ""; } catch (e) {}
-        actions.dataset.__payMoved = "";
+        // Put the wrapper in the center lane
+        try {
+          wrap.style.display = "inline-flex";
+          wrap.style.alignItems = "center";
+          wrap.style.justifyContent = "center";
+          wrap.style.margin = "0";
+          wrap.style.padding = "0";
+          wrap.style.width = "auto";
+        } catch (e) {}
+
+        centerSlot.innerHTML = "";
+        centerSlot.appendChild(wrap);
+
+        // Hide action bar "Next" (payment is handled by the real submit we just moved)
+        try { nextBtn.style.display = "none"; } catch (e) {}
+
+        actions.dataset.__payInstalled = "1";
       }
 
       function updateButtons() {
@@ -1971,7 +1986,14 @@
         }
         show(actions);
 
-        if (step !== "content6") restoreRealSubmitHome();
+        // leaving payment -> restore original submit back into content6 and reset bar
+        if (step !== "content6") {
+          try { nextBtn.style.display = ""; } catch (e) {}
+          actions.dataset.__payInstalled = "";
+          var centerSlot = actions.querySelector(".bnp-action-center");
+          if (centerSlot) centerSlot.innerHTML = "";
+          restorePaymentSubmitToOriginalSpot();
+        }
 
         if (step === "newsletters" || step === "content1") nextBtn.textContent = "Next";
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
@@ -2070,7 +2092,7 @@
         step = "content6";
         updateButtons();
 
-        // Move the REAL submit into the modal action bar (no proxy)
+        // move ORIGINAL submit into the bar (centered)
         moveRealSubmitIntoPaymentBar();
       }
 
@@ -2087,8 +2109,10 @@
         if (content4) hide(content4);
 
         closePaymentModal();
-        restoreRealSubmitHome();
         hide(actions);
+
+        // restore submit when fully leaving wizard
+        updateButtons();
 
         step = "plans";
         scrollToHeaderNow();
@@ -2113,7 +2137,7 @@
 
       function backFromPayment() {
         closePaymentModal();
-        restoreRealSubmitHome();
+        // updateButtons() will restore submit back into content6
         if (chosenKind === "print" && content4) {
           show(content4);
           placeActions(content4);
@@ -2153,7 +2177,7 @@
         }
 
         if (step === "content6") {
-          // Should be hidden (real submit is moved into bar), but keep fallback
+          // Next is hidden on payment step; kept as fallback
           submitViaNative(content6);
         }
       });
@@ -2211,6 +2235,12 @@
 
       preloadPaymentStep();
       hide(actions);
+
+      // IMPORTANT: hide original submit while content6 is preloaded/hidden
+      try {
+        var w = findOriginalPaymentSubmitWrapper();
+        if (w) w.style.display = "none";
+      } catch (e) {}
 
       step = "plans";
       updateButtons();
@@ -2331,11 +2361,8 @@
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (YOUR ORIGINAL SECTION 3)
-     + Cart Summary Sync Add-on
-     (UPDATED: price reads selected radio more reliably)
+     SECTION O — CART FORCE-SYNC (UPDATED: price ALWAYS from selected radio first)
      ============================================================ */
-
   (function () {
     if (BNP.__CART3__) return;
     BNP.__CART3__ = true;
@@ -2354,123 +2381,50 @@
     }
     var fmt = function (n) { return typeof n === "number" && !isNaN(n) ? "$" + n.toFixed(2) : null; };
 
-    function currentPeriod() {
-      var seg = Q("#billingSeg");
-      var mode = seg && seg.dataset ? seg.dataset.active : null;
-      if (mode === "monthly") return "monthly";
-      if (mode === "annual") return "yearly";
-
-      var sample = (
-        (Q("#chillPer") && Q("#chillPer").textContent) ||
-        (Q("#proPer") && Q("#proPer").textContent) ||
-        (Q("#plusPer") && Q("#plusPer").textContent) ||
-        ""
-      ).toLowerCase();
-
-      return /\bmo\b/.test(sample) ? "monthly" : "yearly";
-    }
-
-    function currentRegion() {
-      var t = (Q("#id7 option:checked") && Q("#id7 option:checked").textContent || "").toLowerCase();
-      if (t.includes("united states")) return "usa";
-      if (t.includes("canada")) return "can";
-      return "int";
-    }
-
-    function currentKind() {
-      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
-      if (selCard) {
-        var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
-        if (/fan only/.test(title)) return "fan";
-        if (/ac\s*pro\s*\+\s*print|print/.test(title)) return "print";
-        if (/chill/.test(title)) return "chill";
-        return "digital";
-      }
-
-      var checked = QA("input[type=radio]:checked");
-      for (var i = 0; i < checked.length; i++) {
-        var r = checked[i];
-        var li = r.closest && r.closest("li");
-        if (!li) continue;
-        var c = li.className || "";
-        if (/\bPprod\b/i.test(c)) return "print";
-        if (/\bAprod\b/i.test(c)) return "chill";
-        if (/\bDprod\b/i.test(c)) return "digital";
+    function findCheckedProductRadio() {
+      // Prefer campaign/standard checked radio (this is the true source of cart pricing)
+      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key"), document].filter(Boolean);
+      for (var i = 0; i < roots.length; i++) {
+        var r = roots[i];
+        var checked = Q("input[type='radio']:checked", r);
+        if (checked) return checked;
       }
       return null;
     }
 
-    function decodeRow(li) {
-      var cls = li.className || "";
-      var input = li.querySelector("input[type='radio']");
+    function labelForInput(input) {
       if (!input) return null;
-
-      var kind =
-        /\bAprod\b/i.test(cls) ? "chill" :
-        /\bDprod\b/i.test(cls) ? "digital" :
-        /\bPprod\b/i.test(cls) ? "print" :
-        null;
-      if (!kind) return null;
-
-      var lab = input.id ? Q("label[for='" + input.id + "']") : null;
-      var raw = T(lab) || T(li);
-      var lower = (raw || "").toLowerCase();
-
-      // UPDATED: handle term3 + fallback parse from label text
-      var per =
-        (/\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls)) ? "monthly" :
-        /\bterm26\b/i.test(cls) ? "yearly" :
-        (/month|monthly|\bmo\b/.test(lower)) ? "monthly" :
-        (/year|annual|\byr\b/.test(lower)) ? "yearly" :
-        null;
-
-      // UPDATED: region inference can fallback from label text
-      var region =
-        /\bCANprod\b/i.test(cls) ? "can" :
-        /\bINTprod\b/i.test(cls) ? "int" :
-        /\bUSAPROD\b/i.test(cls) ? "usa" :
-        (/canada/.test(lower)) ? "can" :
-        (/international/.test(lower)) ? "int" :
-        "usa";
-
-      var price = _moneyFromString(raw);
-
-      return { kind: kind, per: per, region: region, input: input, price: price, raw: raw };
+      if (input.id) {
+        var l = document.querySelector("label[for='" + input.id + "']");
+        if (l) return l;
+      }
+      var parentLabel = input.closest && input.closest("label");
+      return parentLabel || null;
     }
 
-    function selectedPriceMap() {
-      var map = {
-        chill: { monthly: null, yearly: null },
-        digital: { monthly: null, yearly: null },
-        print: { usa: { monthly: null, yearly: null }, can: { monthly: null, yearly: null }, int: { monthly: null, yearly: null } }
+    function decodeSelectedRadio() {
+      var input = findCheckedProductRadio();
+      if (!input) return null;
+
+      var li = input.closest && input.closest("li");
+      var labelEl = labelForInput(input) || (li ? Q("label", li) : null);
+      var raw = T(labelEl) || (li ? T(li) : "") || "";
+      var priceNum = _moneyFromString(raw);
+
+      var cls = ((li && li.className) || "") + " " + (input.className || "");
+      var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
+      var per = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
+      var region = /\bCANprod\b/i.test(cls) ? "can" : /\bINTprod\b/i.test(cls) ? "int" : "usa";
+
+      return {
+        input: input,
+        li: li,
+        rawLabel: raw,
+        kind: kind,
+        per: per,
+        region: region,
+        price: (typeof priceNum === "number" && !isNaN(priceNum)) ? fmt(priceNum) : null
       };
-
-      var roots = [];
-      [".campaign-placeholder", ".standard-rates", ".promo-key"].forEach(function (s) {
-        var n = Q(s);
-        if (n) roots.push(n);
-      });
-      if (!roots.length) roots.push(document.body);
-
-      var fallbackPer = currentPeriod();
-
-      roots.forEach(function (root) {
-        QA("li", root).forEach(function (li) {
-          var row = decodeRow(li);
-          if (!row) return;
-          if (!row.input.checked) return;
-          if (row.price == null) return;
-
-          // UPDATED: if DF doesn’t mark term class, use currentPeriod()
-          var per = row.per || fallbackPer;
-
-          if (row.kind === "print") map.print[row.region][per] = fmt(row.price);
-          else if (row.kind === "digital") map.digital[per] = fmt(row.price);
-          else if (row.kind === "chill") map.chill[per] = fmt(row.price);
-        });
-      });
-
-      return map;
     }
 
     function tilePriceFallback(kind) {
@@ -2489,38 +2443,52 @@
       return null;
     }
 
+    function currentKindFromTile() {
+      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
+      if (selCard) {
+        var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
+        if (/fan only/.test(title)) return "fan";
+        if (/ac\s*pro\s*\+\s*print|print/.test(title)) return "print";
+        if (/chill/.test(title)) return "chill";
+        return "digital";
+      }
+      return null;
+    }
+
     var CART = { kind: null, price: null, term: null, format: null, img: null };
 
     function computeCartSnapshot() {
-      var kind = currentKind();
-      var period = currentPeriod();
-      var region = currentRegion();
+      var radio = decodeSelectedRadio();
 
-      if (!kind || kind === "fan") return { kind: kind, price: null, term: null, format: null, img: null };
+      // If a product radio is selected, use it as truth
+      if (radio && radio.kind) {
+        var term = (radio.per === "monthly") ? "Monthly" : "Annual";
+        var format = radio.kind === "print" ? "Print" : "Digital";
+        var img =
+          radio.kind === "print"
+            ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
+            : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png";
 
-      var m = selectedPriceMap();
-      var price = null;
+        // If price wasn't parseable, fall back to tile amount for that kind
+        var price = radio.price || tilePriceFallback(radio.kind);
 
-      if (kind === "chill") price = m.chill[period];
-      if (kind === "digital") price = m.digital[period];
-      if (kind === "print") {
-        price =
-          (m.print[region] && m.print[region][period]) ||
-          m.print.usa[period] ||
-          m.print.can[period] ||
-          m.print.int[period];
+        return { kind: radio.kind, price: price, term: term, format: format, img: img };
       }
 
-      if (!price) price = tilePriceFallback(kind);
+      // Otherwise fall back to selected tile (free/fan/no selection)
+      var kind = currentKindFromTile();
+      if (!kind) return { kind: null, price: null, term: null, format: null, img: null };
+      if (kind === "fan") return { kind: "fan", price: null, term: null, format: null, img: null };
 
-      var term = period === "monthly" ? "Monthly" : "Annual";
-      var format = kind === "print" ? "Print" : "Digital";
-      var img =
+      var price2 = tilePriceFallback(kind);
+      var term2 = "Annual";
+      var format2 = kind === "print" ? "Print" : "Digital";
+      var img2 =
         kind === "print"
           ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
           : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png";
 
-      return { kind: kind, price: price, term: term, format: format, img: img };
+      return { kind: kind, price: price2, term: term2, format: format2, img: img2 };
     }
 
     function renderCart(snapshot) {
@@ -2534,7 +2502,7 @@
       if (snapshot.kind && snapshot.kind !== "fan" && snapshot.price) {
         var div = document.createElement("div");
         div.innerHTML =
-          '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;" />' +
+          '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;float:left;" />' +
           '<p style="margin:0;font-size:14px;color:#555;">Price: ' + snapshot.price +
           "<br>" + snapshot.term + ", " + snapshot.format + " Subscription</p>";
 
@@ -2682,7 +2650,9 @@
     onReady(init);
   })();
 
-  /* ---- CART SUMMARY SYNC ADD-ON (unchanged) ---- */
+  /* ============================================================
+     CART SUMMARY SYNC ADD-ON (unchanged)
+     ============================================================ */
   (function () {
     if (BNP.__CART_SUMMARY_ADDON__) return;
     BNP.__CART_SUMMARY_ADDON__ = true;
