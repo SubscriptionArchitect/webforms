@@ -5,6 +5,13 @@
    FIXES IN THIS VERSION:
    - REMOVED "bnp-cart-summary" injection (Cart Summary Sync add-on deleted)
    - STRONGER required-field validation on content1 (and content4)
+   - HARD-KILL #bnp-cart-summary if it ever appears (defensive)
+   - CART sync now prefers real PRODUCT radios (Aprod/Dprod/Pprod or $/Annual/Monthly/Print/Digital/Chill),
+     so it won't latch onto random Yes/No radios elsewhere on the page
+   - Weekly Chill vs ACHR NEWS Yes/No now has a text-based fallback (works even if optid IDs change)
+   - UPDATED for TWO Requested Version groups using:
+       .achr-requested-version  (ACHR NEWS)
+       .wc-requested-version    (Weekly Chill)
 ===================================================================================== */
 
 (function () {
@@ -55,6 +62,26 @@
       t = setTimeout(function () { fn.apply(null, args); }, ms);
     };
   }
+
+  /* ============================================================
+     DEFENSIVE: HARD-KILL #bnp-cart-summary IF IT EVER APPEARS
+     ============================================================ */
+  (function () {
+    if (BNP.__KILL_BNP_CART_SUMMARY__) return;
+    BNP.__KILL_BNP_CART_SUMMARY__ = true;
+
+    function kill() {
+      var el = document.getElementById("bnp-cart-summary");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+
+    onReady(function () {
+      kill();
+      if (!window.MutationObserver) return;
+      var mo = new MutationObserver(function () { kill(); });
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+    });
+  })();
 
   /* ============================================================
      SECTION A — PAYMENT-SAFE SUBMIT GUUARD (ORIGINAL)
@@ -1322,7 +1349,15 @@
     }
 
     var COUNTRY_DROPDOWN_ID = "#id7";
-    var WRAPPER_SELECTORS = [".campaign-placeholder", ".standard-rates", ".promo-key", ".requested-version"];
+    var WRAPPER_SELECTORS = [
+      ".campaign-placeholder",
+      ".standard-rates",
+      ".promo-key",
+      ".requested-version",
+      ".achr-requested-version",
+      ".wc-requested-version"
+    ];
+
     var CACHE = (BNP.__CACHE__ = BNP.__CACHE__ || { region: "usa", period: "yearly", rates: null, product: null });
 
     function ensureStylesAndBackdrop() {
@@ -1676,40 +1711,105 @@
       if (y) y.textContent = new Date().getFullYear();
     }
 
-    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
-    function selectRequestedVersion(kind) {
-      var container = $(".requested-version");
-      if (!container) return;
-
-      function pick(re) {
-        var label = $all("label", container).find(function (l) { return re.test(text(l).toLowerCase()); });
-        if (!label) return false;
-
-        var id = label.getAttribute("for");
-        var input = id ? document.getElementById(id) : null;
-        if (!input) return false;
-
-        try { input.click(); } catch (e) {}
-        input.checked = true;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
-      }
-
-      if (kind === "print") pick(/^\s*print\s*$/i);
-      else if (kind === "digital") pick(/^\s*digital\s*$/i);
-      else if (kind === "none") pick(/do\s*not\s*want/i);
+    /* ---------- Requested Version (ACHR vs Weekly Chill) ---------- */
+    function _normRVLabel(s) {
+      return (s || "")
+        .toLowerCase()
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
     }
 
+    function _wantRVLabel(kind) {
+      var k = _normRVLabel(kind);
+      if (k === "none" || k === "do not want" || k === "donotwant") return "do not want";
+      if (k === "print") return "print";
+      if (k === "digital") return "digital";
+      if (k === "both") return "both";
+      if (k === "no preference" || k === "nopreference") return "no preference";
+      return k;
+    }
+
+    function _pickRequestedVersionHost(hostEl, kind) {
+      if (!hostEl) return false;
+
+      var want = _wantRVLabel(kind);
+      var radios = $all("input[type='radio']", hostEl);
+      if (!radios.length) return false;
+
+      for (var i = 0; i < radios.length; i++) {
+        var r = radios[i];
+        var lbl = r.id ? hostEl.querySelector("label[for='" + r.id + "']") : null;
+        var t = _normRVLabel(text(lbl) || "");
+        if (t === want) {
+          try { r.click(); } catch (e) {}
+          r.checked = true;
+          r.dispatchEvent(new Event("input", { bubbles: true }));
+          r.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function _inferRequestedVersionHosts() {
+      var out = { achr: null, wc: null };
+
+      out.achr = document.querySelector(".achr-requested-version") || null;
+      out.wc   = document.querySelector(".wc-requested-version") || null;
+      if (out.achr && out.wc) return out;
+
+      var spans = $all(".requested-version span.drg-element-type-requested-version");
+      spans.forEach(function (sp) {
+        var labels = $all("label", sp).map(function (l) { return _normRVLabel(text(l)); }).filter(Boolean);
+        var hasPrint = labels.indexOf("print") >= 0;
+        var hasBoth  = labels.indexOf("both") >= 0;
+        var hasNoPref = labels.indexOf("no preference") >= 0;
+        var hasDigital = labels.indexOf("digital") >= 0;
+        var hasDoNot = labels.indexOf("do not want") >= 0;
+
+        if (!out.wc && hasDigital && hasDoNot && !hasPrint && !hasBoth && !hasNoPref && labels.length <= 2) {
+          out.wc = sp;
+          return;
+        }
+
+        if (!out.achr && (hasPrint || hasBoth || hasNoPref)) {
+          out.achr = sp;
+          return;
+        }
+      });
+
+      return out;
+    }
+
+    function setAchRequestedVersion(kind) {
+      var host =
+        document.querySelector(".achr-requested-version") ||
+        _inferRequestedVersionHosts().achr;
+
+      return _pickRequestedVersionHost(host, kind);
+    }
+
+    function setWeeklyRequestedVersion(weeklyYes) {
+      var host =
+        document.querySelector(".wc-requested-version") ||
+        _inferRequestedVersionHosts().wc;
+
+      return _pickRequestedVersionHost(host, weeklyYes ? "digital" : "do not want");
+    }
+
+    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
     function decodeRateRow(li) {
       if (!li) return null;
       var cls = li.className || "";
       var input = li.querySelector("input[type='radio']");
       if (!input) return null;
 
-      var labelEl = input.id
-        ? document.querySelector("label[for='" + input.id + "']")
-        : li.querySelector("label");
+      var labelEl =
+        (input.id && (li.closest(".campaign-placeholder,.standard-rates") || document).querySelector("label[for='" + input.id + "']")) ||
+        li.querySelector("label") ||
+        null;
+
       var raw = text(labelEl) || text(li);
       var lower = raw.toLowerCase();
 
@@ -1822,7 +1922,48 @@
       });
     }
 
+    /* --------- PATCH: Yes/No set with ID-first, TEXT-fallback --------- */
+    function setYesNoByQuestionText(questionIncludes, yesOrNo) {
+      var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
+      var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+      // Find a questionlabel span or p that contains the question; then use the first radio name in that block
+      var candidates = $all(".questionlabel, p, div, span").filter(function (n) {
+        var t = (text(n) || "").toLowerCase().replace(/\s+/g, " ").trim();
+        return t && t.indexOf(qNeed) !== -1;
+      });
+
+      var groupName = null;
+      for (var i = 0; i < candidates.length; i++) {
+        var wrap = candidates[i].closest && candidates[i].closest(".drg-element-type-product, .product-selection, span, p, div");
+        wrap = wrap || candidates[i].parentNode || null;
+        if (!wrap) continue;
+        var anyRadio = wrap.querySelector("input[type='radio']");
+        if (anyRadio && anyRadio.name) { groupName = anyRadio.name; break; }
+      }
+      if (!groupName) return false;
+
+      var group = document.querySelectorAll("input[type='radio'][name='" + groupName.replace(/'/g, "\\'") + "']");
+      if (!group || !group.length) return false;
+
+      var chosen = null;
+      for (var j = 0; j < group.length; j++) {
+        var r = group[j];
+        var lbl = r.id ? document.querySelector("label[for='" + r.id + "']") : (r.closest ? r.closest("label") : null);
+        var t2 = (text(lbl) || "").toLowerCase().replace(/\s+/g, " ").trim();
+        if (t2 === want) { chosen = r; break; }
+      }
+      if (!chosen) return false;
+
+      try { chosen.click(); } catch (e) {}
+      chosen.checked = true;
+      chosen.dispatchEvent(new Event("input", { bubbles: true }));
+      chosen.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+
     function setNewsAndWeekly(newsYes, weeklyYes) {
+      // ID-first (when present)
       var newsYesR = document.getElementById("optid3309_1"), newsNoR = document.getElementById("optid3309_2");
       var wcYesR = document.getElementById("optid3934_1"), wcNoR = document.getElementById("optid3934_2");
 
@@ -1833,11 +1974,23 @@
           tgt.checked = true;
           tgt.dispatchEvent(new Event("input", { bubbles: true }));
           tgt.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
         }
+        return !!tgt;
       }
 
-      ensure(newsYes, newsYesR, newsNoR);
-      ensure(weeklyYes, wcYesR, wcNoR);
+      var okNews = ensure(newsYes, newsYesR, newsNoR);
+      var okWc = ensure(weeklyYes, wcYesR, wcNoR);
+
+      // Text fallback (NO IDs)
+      if (!okNews) {
+        // just look for "subscription to the achr news"
+        setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
+      }
+      if (!okWc) {
+        // just look for "weekly chill"
+        setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
+      }
     }
 
     function attachTileClickSelection() {
@@ -1865,14 +2018,31 @@
         var period = currentPeriod();
         var region = CACHE.region || "usa";
 
-        var rvKind = (kind === "print") ? "print" : (kind === "chill") ? "none" : "digital";
+        var weeklyYes = (kind === "chill");
 
-        if (kind === "chill") setNewsAndWeekly(false, true);
+        // Yes/No product questions
+        if (weeklyYes) setNewsAndWeekly(false, true);
         else setNewsAndWeekly(true, false);
+
+        // Weekly Chill Requested Version:
+        // - Weekly Chill = Digital
+        // - Anything else = Do not want
+        setWeeklyRequestedVersion(weeklyYes);
+
+        // ACHR Requested Version:
+        // - If Weekly Chill selected => Do not want
+        // - Else Print tile => Print
+        // - Else => Digital
+        if (weeklyYes) setAchRequestedVersion("do not want");
+        else if (kind === "print") setAchRequestedVersion("print");
+        else setAchRequestedVersion("digital");
 
         if (kind === "fan") {
           clearAllRateRadios();
-          selectRequestedVersion("digital");
+          // Fan-only should NOT request either magazine version
+          setAchRequestedVersion("do not want");
+          setWeeklyRequestedVersion(false);
+
           CACHE.product = null;
           if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
           return;
@@ -1880,7 +2050,6 @@
 
         var planMap = (kind === "print") ? "print" : (kind === "chill") ? "chill" : "digital";
         selectCampaignRadioAny(planMap, period, region);
-        selectRequestedVersion(rvKind);
 
         applyPricesNow();
         if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
@@ -2464,16 +2633,6 @@
     }
     var fmt = function (n) { return typeof n === "number" && !isNaN(n) ? "$" + n.toFixed(2) : null; };
 
-    function findCheckedProductRadio() {
-      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key"), document].filter(Boolean);
-      for (var i = 0; i < roots.length; i++) {
-        var r = roots[i];
-        var checked = Q("input[type='radio']:checked", r);
-        if (checked) return checked;
-      }
-      return null;
-    }
-
     function labelForInput(input) {
       if (!input) return null;
       if (input.id) {
@@ -2482,6 +2641,39 @@
       }
       var parentLabel = input.closest && input.closest("label");
       return parentLabel || null;
+    }
+
+    function isLikelyProductRadio(input) {
+      if (!input || input.type !== "radio") return false;
+
+      var li = input.closest && input.closest("li");
+      var cls = ((li && li.className) || "") + " " + (input.className || "");
+      if (/\b(Aprod|Dprod|Pprod|USAPROD|CANprod|INTprod|term2|term3|term26)\b/i.test(cls)) return true;
+
+      var lbl = labelForInput(input);
+      var t = (T(lbl) || (li ? T(li) : "") || "").toLowerCase();
+      if (!t) return false;
+
+      if (/\$/.test(t)) return true;
+      if (/\b(annual|year|yr|monthly|month|mo|print|digital|chill)\b/.test(t)) return true;
+
+      return false;
+    }
+
+    function findCheckedProductRadio() {
+      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key")].filter(Boolean);
+
+      for (var i = 0; i < roots.length; i++) {
+        var checked = Q("input[type='radio']:checked", roots[i]);
+        if (checked && isLikelyProductRadio(checked)) return checked;
+      }
+
+      var allChecked = QA("input[type='radio']:checked");
+      for (var j = 0; j < allChecked.length; j++) {
+        if (isLikelyProductRadio(allChecked[j])) return allChecked[j];
+      }
+
+      return null;
     }
 
     function decodeSelectedRadio() {
@@ -2496,6 +2688,18 @@
       var cls = ((li && li.className) || "") + " " + (input.className || "");
       var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
       var per = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
+
+      if (!kind) {
+        var low = raw.toLowerCase();
+        if (/print/.test(low)) kind = "print";
+        else if (/chill/.test(low)) kind = "chill";
+        else if (/digital/.test(low)) kind = "digital";
+      }
+      if (!per) {
+        var low2 = raw.toLowerCase();
+        if (/month|monthly|\bmo\b/.test(low2)) per = "monthly";
+        else if (/year|annual|\byr\b/.test(low2)) per = "yearly";
+      }
 
       return {
         input: input,
@@ -2570,6 +2774,8 @@
     function renderCart(snapshot) {
       var items = QA(".cartItems");
       var totals = QA(".cartTotal");
+
+      if (!items.length && !totals.length) return;
 
       items.forEach(function (el) { el.innerHTML = ""; });
 
@@ -2944,3 +3150,4 @@
   })();
 
 })();
+
