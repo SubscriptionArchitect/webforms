@@ -1,215 +1,15 @@
-```javascript
-(function () {
-  "use strict";
-
-  if (window.__BNP_TILE_KEEPALIVE__) return;
-  window.__BNP_TILE_KEEPALIVE__ = true;
-
-  function onReady(fn) {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
-    else fn();
-  }
-  function $(sel, root) { return (root || document).querySelector(sel); }
-  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-
-  function depthOf(el) {
-    var d = 0, p = el;
-    while (p && p !== document.body) { d++; p = p.parentElement; }
-    return d;
-  }
-
-  function rememberDisplay(el) {
-    if (!el) return "block";
-    if (el.dataset && el.dataset.__bnpDisp) return el.dataset.__bnpDisp;
-    var cs = getComputedStyle(el);
-    var disp = (cs.display && cs.display !== "none") ? cs.display : "block";
-    try { el.dataset.__bnpDisp = disp; } catch (e) {}
-    return disp;
-  }
-
-  function ensureShown(el) {
-    if (!el) return false;
-
-    var changed = false;
-
-    try { el.hidden = false; } catch (e) {}
-    try { el.removeAttribute("hidden"); } catch (e) {}
-    try { el.removeAttribute("aria-hidden"); } catch (e) {}
-
-    var cs = getComputedStyle(el);
-
-    if (cs.display === "none") {
-      el.style.setProperty("display", rememberDisplay(el), "important");
-      changed = true;
-    }
-    if (cs.visibility === "hidden") {
-      el.style.setProperty("visibility", "visible", "important");
-      changed = true;
-    }
-    if (cs.opacity === "0") {
-      el.style.setProperty("opacity", "1", "important");
-      changed = true;
-    }
-    if (cs.pointerEvents === "none") {
-      el.style.setProperty("pointer-events", "auto", "important");
-      changed = true;
-    }
-
-    var rect = el.getBoundingClientRect();
-    var hasArea = rect.width > 10 && rect.height > 10;
-
-    if (!hasArea) {
-      var sh = el.scrollHeight || 0;
-      var sw = el.scrollWidth || 0;
-
-      if ((sh > 60 || sw > 200) && (rect.height < 5 || rect.width < 5)) {
-        if (el.style && (el.style.height === "0px" || el.style.height === "0")) {
-          el.style.removeProperty("height");
-          changed = true;
-        }
-        if (el.style && (el.style.maxHeight === "0px" || el.style.maxHeight === "0")) {
-          el.style.removeProperty("max-height");
-          changed = true;
-        }
-        if (cs.maxHeight === "0px") {
-          el.style.removeProperty("max-height");
-          changed = true;
-        }
-        if (cs.height === "0px") {
-          el.style.removeProperty("height");
-          changed = true;
-        }
-        if (cs.overflow === "hidden" || cs.overflowY === "hidden") {
-          el.style.removeProperty("overflow");
-          el.style.removeProperty("overflow-y");
-          changed = true;
-        }
-      }
-    }
-
-    return changed;
-  }
-
-  function findPlansRoot() {
-    if (window.__BNP_PLANS_ROOT && document.body.contains(window.__BNP_PLANS_ROOT)) return window.__BNP_PLANS_ROOT;
-
-    var direct =
-      $("section.plans") ||
-      $(".plans") ||
-      $("section[aria-label='Plans']") ||
-      $("section[aria-label*='Plan']") ||
-      $("[data-section='plans']") ||
-      $("[data-plans]") ||
-      $("#plans") ||
-      null;
-
-    function isGoodRoot(el) {
-      if (!el) return false;
-      var cards = el.querySelectorAll(".card");
-      if (cards.length < 2) return false;
-      var priced = 0;
-      for (var i = 0; i < cards.length; i++) {
-        var c = cards[i];
-        if (c.querySelector(".price .amount") || c.querySelector(".price") || c.querySelector(".btn")) priced++;
-      }
-      return priced >= 2;
-    }
-
-    if (direct && isGoodRoot(direct)) {
-      window.__BNP_PLANS_ROOT = direct;
-      return direct;
-    }
-
-    var candidates = [];
-    var nodes = $all("section, main, div");
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      var cards = el.querySelectorAll(".card");
-      if (!cards || cards.length < 2) continue;
-
-      var priced = 0;
-      for (var j = 0; j < cards.length; j++) {
-        var c = cards[j];
-        if (c.querySelector(".price .amount") || c.querySelector(".price") || c.querySelector(".btn")) priced++;
-      }
-      if (priced < 2) continue;
-
-      candidates.push({ el: el, cards: cards.length, depth: depthOf(el) });
-    }
-
-    candidates.sort(function (a, b) {
-      if (b.cards !== a.cards) return b.cards - a.cards;
-      return a.depth - b.depth;
-    });
-
-    if (candidates.length) {
-      window.__BNP_PLANS_ROOT = candidates[0].el;
-      return candidates[0].el;
-    }
-
-    return null;
-  }
-
-  function reviveTiles() {
-    var plans = findPlansRoot();
-    if (!plans) return;
-
-    ensureShown(plans);
-
-    var p = plans.parentElement;
-    for (var i = 0; i < 6 && p && p !== document.body; i++) {
-      ensureShown(p);
-      p = p.parentElement;
-    }
-
-    var cards = $all(".card", plans);
-    if (!cards.length) cards = $all("article", plans);
-
-    for (var k = 0; k < cards.length; k++) {
-      var c = cards[k];
-      if (c.getAttribute("data-keepalive") === "off") continue;
-      ensureShown(c);
-      var inner = $all(".price,.features,.btn,h2,h3,h4", c);
-      for (var m = 0; m < inner.length; m++) ensureShown(inner[m]);
-    }
-
-    if (cards.length && !plans.dataset.__bnpPlansMarked) {
-      try { plans.dataset.__bnpPlansMarked = "1"; } catch (e) {}
-      try { plans.setAttribute("data-bnp-plans-root", "1"); } catch (e) {}
-    }
-  }
-
-  function start() {
-    reviveTiles();
-
-    var ticks = 0;
-    var iv = setInterval(function () {
-      reviveTiles();
-      ticks++;
-      if (ticks >= 120) clearInterval(iv);
-    }, 125);
-
-    if (window.MutationObserver) {
-      var mo = new MutationObserver(function () { reviveTiles(); });
-      mo.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["style", "class", "hidden", "aria-hidden"]
-      });
-    }
-  }
-
-  window.__BNP_FIND_PLANS_ROOT__ = findPlansRoot;
-  window.__BNP_REVIVE_TILES__ = reviveTiles;
-
-  onReady(start);
-})();
-
+/* =====================================================================================
+NEWS PRO SITE MASTER SCRIPT (REQUIRED LOGIC REMOVED)
+Brandon Decker | UX LAB
+Updated: 12/17/2025
+===================================================================================== */
 
 (function () {
   "use strict";
 
+  /* ============================================================
+     BNP GLOBAL NAMESPACE + SMALL UTILS
+     ============================================================ */
   if (!window.__BNP_MASTER__) window.__BNP_MASTER__ = {};
   var BNP = window.__BNP_MASTER__;
 
@@ -220,24 +20,6 @@
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
   function text(el) { return ((el && (el.innerText || el.textContent)) || "").trim(); }
-
-  function getPlansContainer() {
-    var root = null;
-    if (window.__BNP_PLANS_ROOT && document.body.contains(window.__BNP_PLANS_ROOT)) root = window.__BNP_PLANS_ROOT;
-    if (!root && typeof window.__BNP_FIND_PLANS_ROOT__ === "function") root = window.__BNP_FIND_PLANS_ROOT__();
-    if (root) return root;
-
-    return (
-      document.querySelector("section.plans") ||
-      document.querySelector(".plans") ||
-      document.querySelector("section[aria-label='Plans']") ||
-      document.querySelector("section[aria-label*='Plan']") ||
-      document.querySelector("[data-section='plans']") ||
-      document.querySelector("[data-plans]") ||
-      document.querySelector("#plans") ||
-      null
-    );
-  }
 
   function moneyFromString(str) {
     if (!str) return null;
@@ -251,9 +33,29 @@
   }
   function isVisible(el) {
     if (!el) return false;
-    if (el.hidden) return false;
     var cs = getComputedStyle(el);
     return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
+  }
+  function isFieldVisible(el) {
+    if (!el) return false;
+    if (el.type === "hidden") return false;
+    if (el.disabled) return false;
+
+    // if any parent is hidden, treat as hidden
+    var p = el;
+    while (p && p !== document.body) {
+      var pcs = getComputedStyle(p);
+      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
+      p = p.parentElement;
+    }
+
+    var cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    if (el.offsetParent === null && cs.position !== "fixed") {
+      var r = el.getBoundingClientRect();
+      if ((r.width === 0 && r.height === 0)) return false;
+    }
+    return true;
   }
   function debounce(fn, ms) {
     var t = null;
@@ -264,6 +66,28 @@
     };
   }
 
+  function isEmptyValue(v) {
+    return !String(v == null ? "" : v).trim();
+  }
+
+  function looksLikeEmailField(el) {
+    if (!el) return false;
+    var t = (el.getAttribute("type") || "").toLowerCase();
+    if (t === "email") return true;
+    if (el.id === "id13") return true;
+    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
+    return false;
+  }
+
+  function isValidEmail(v) {
+    var s = String(v || "").trim();
+    if (!s) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  }
+
+  /* ============================================================
+     DEFENSIVE: HARD-KILL #bnp-cart-summary IF IT EVER APPEARS
+     ============================================================ */
   (function () {
     if (BNP.__KILL_BNP_CART_SUMMARY__) return;
     BNP.__KILL_BNP_CART_SUMMARY__ = true;
@@ -281,6 +105,9 @@
     });
   })();
 
+  /* ============================================================
+     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
     BNP.__SAFE_SUBMIT_GUARD__ = true;
@@ -309,15 +136,18 @@
         }
 
         if (form && typeof form.requestSubmit === "function") {
+          console.warn("[BNP SafeSubmit] Intercepted form.submit(); using requestSubmit() instead.");
           return form.requestSubmit();
         }
 
         var btn = findRealSubmitButton(form);
         if (btn) {
+          console.warn("[BNP SafeSubmit] Intercepted form.submit(); clicking submit button instead.");
           btn.click();
           return;
         }
 
+        console.warn("[BNP SafeSubmit] No requestSubmit/button found; falling back to native submit().");
         return nativeSubmit.call(form);
       } catch (e) {
         try { return nativeSubmit.call(this); } catch (e2) {}
@@ -325,27 +155,33 @@
     };
   })();
 
+  /* ============================================================
+     SECTION B — ZIP / CITY / STATE FAIL-SAFE (PATCHED: DO NOT HIDE REQUIRED FIELDS)
+     ============================================================ */
   (function () {
     if (BNP.__ZIP_HELPER__) return;
     BNP.__ZIP_HELPER__ = true;
 
     onReady(function () {
-      var zipInput = document.getElementById("id9");
-      var cityInput = document.getElementById("id6");
-      var stateSelect = document.getElementById("id8");
+      var zipInput = document.getElementById("id9");  // Zip/Postal
+      var cityInput = document.getElementById("id6"); // City
+      var stateSelect = document.getElementById("id8"); // State/Province
 
       if (!zipInput || !cityInput || !stateSelect) return;
 
       var zipLabel = document.querySelector('label[for="id9"]');
       var zipLabelText = (zipLabel && (zipLabel.textContent || "")).toLowerCase();
-      if (zipLabelText && zipLabelText.indexOf("zip") === -1 && zipLabelText.indexOf("postal") === -1) return;
+      if (zipLabelText && zipLabelText.indexOf("zip") === -1 && zipLabelText.indexOf("postal") === -1) {
+        console.warn("[ZIP] id9 label does not look like ZIP/Postal; skipping ZIP helper.");
+        return;
+      }
 
       var stateCodeToLabel = {
         "AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia",
         "FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine",
         "MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire",
         "NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island",
-        "SC":"South Dakota","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VI":"Virgin Islands","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"
+        "SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VI":"Virgin Islands","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"
       };
 
       function setStateByCode(stateCode) {
@@ -393,7 +229,9 @@
 
             if (stateCode) setStateByCode(stateCode);
           })
-          .catch(function () {});
+          .catch(function (err) {
+            console.warn("[ZIP] Lookup failed:", err);
+          });
       }
 
       function readZipDigits() {
@@ -402,7 +240,10 @@
 
       zipInput.addEventListener("input", function () {
         var v = readZipDigits();
-        if (v.length < 5) { lastZipLookedUp = ""; return; }
+        if (v.length < 5) {
+          lastZipLookedUp = "";
+          return;
+        }
         if (v.length === 5) lookupZip(v);
       });
 
@@ -413,6 +254,9 @@
     });
   })();
 
+  /* ============================================================
+     SECTION C — HIDDEN CONTENT VISIBILITY GUARD + MAC SAFE HOTKEY (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__HIDDEN_GUARD__) return;
     BNP.__HIDDEN_GUARD__ = true;
@@ -425,7 +269,9 @@
 
       function matchesHotkey(e) {
         if (e.code !== "Period") return false;
-        return e.ctrlKey === true && (e.shiftKey === true || e.altKey === true);
+        var ctrl = e.ctrlKey === true;
+        var shiftOrAlt = e.shiftKey === true || e.altKey === true;
+        return ctrl && shiftOrAlt;
       }
 
       function toggleHidden(id) {
@@ -439,10 +285,14 @@
         e.preventDefault();
         toggleHidden("content2");
         toggleHidden("content3");
+        console.log("[Hotkey] Toggled #content2/#content3");
       }, true);
     });
   })();
 
+  /* ============================================================
+     SECTION D — FAQ ACCORDION (SINGLE-OPEN) (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__FAQ_ACCORDION__) return;
     BNP.__FAQ_ACCORDION__ = true;
@@ -471,6 +321,9 @@
     }
   })();
 
+  /* ============================================================
+     SECTION E — ICON INJECTION (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__ICON_INJECT__) return;
     BNP.__ICON_INJECT__ = true;
@@ -492,10 +345,7 @@
     function setText(el, t) { if (el) el.textContent = t; }
 
     function run() {
-      var plansContainer = getPlansContainer();
-      if (!plansContainer) return;
-
-      var cards = plansContainer.querySelectorAll(".card");
+      var cards = document.querySelectorAll(".plans .card");
       if (cards.length < 4) return;
 
       var e0 = cards[0].querySelector(".eyebrow");
@@ -510,7 +360,7 @@
       var e3 = cards[3].querySelector(".eyebrow");
       if (e3) { setText(e3, "Best value with print "); var i3 = document.createElement("span"); inject(i3, ICONS.newspaper, "svg-eyebrow"); e3.appendChild(i3); }
 
-      var btnArrows = plansContainer.querySelectorAll(".card .btn .arrow");
+      var btnArrows = document.querySelectorAll(".plans .card .btn .arrow");
       btnArrows.forEach(function (el) {
         inject(el, ICONS.arrowRight);
         el.style.width = "clamp(1.2em, 1em + 0.7vw, 1.9em)";
@@ -525,11 +375,14 @@
     }
   })();
 
+  /* ============================================================
+     SECTION F — TILE ALIGNMENT (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__TILE_ALIGN__) return;
     BNP.__TILE_ALIGN__ = true;
 
-    var S = { cards: ".card", h2: "h2", sub: ".sub", price: ".price", features: ".features" };
+    var S = { cards: ".plans .card", h2: "h2", sub: ".sub", price: ".price", features: ".features" };
 
     function clearMinHeights(cards) {
       [S.h2, S.sub, S.price, S.features].forEach(function (sel) {
@@ -547,10 +400,7 @@
     }
 
     function alignTiles() {
-      var plansContainer = getPlansContainer();
-      if (!plansContainer) return;
-
-      var cards = Array.from(plansContainer.querySelectorAll(S.cards));
+      var cards = $all(S.cards);
       if (!cards.length) return;
 
       clearMinHeights(cards);
@@ -579,10 +429,7 @@
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(scheduleAlign);
       function hook() {
-        var plansContainer = getPlansContainer();
-        if (!plansContainer) return;
-
-        Array.from(plansContainer.querySelectorAll(S.cards)).forEach(function (card) {
+        $all(S.cards).forEach(function (card) {
           [S.price, S.features].forEach(function (sel) {
             var el = card.querySelector(sel);
             if (el) ro.observe(el);
@@ -606,6 +453,9 @@
     }
   })();
 
+  /* ============================================================
+     SECTION G — NEWSLETTER SYNC (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__NL_SYNC__) return;
     BNP.__NL_SYNC__ = true;
@@ -740,6 +590,7 @@
 
         if (mergedTokens.length === 0) {
           setStateLabel(toggleEl);
+          console.warn("[NL Sync] No identifiable title/alt/id for toggle", toggleEl);
           return;
         }
 
@@ -754,6 +605,7 @@
         var accept = bestScore >= 0.28 || (mergedTokens.length <= 2 && bestScore >= 0.2);
         if (!accept || bestIdx === -1) {
           setStateLabel(toggleEl);
+          console.warn("[NL Sync] No hidden input matched for:", h4Text || idGuess, "bestScore=", bestScore.toFixed(3));
           return;
         }
 
@@ -770,6 +622,9 @@
     }
   })();
 
+  /* ============================================================
+     SECTION H — FIX ACTION BAR BUTTON ALIGNMENT & SIZE (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__ACTION_BAR_FIX__) return;
     BNP.__ACTION_BAR_FIX__ = true;
@@ -805,6 +660,9 @@
     });
   })();
 
+  /* ============================================================
+     SECTION I — WIZARD VISIBILITY GUARD (PAYMENT-SAFE) (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__WIZ_VIS_GUARD__) return;
     BNP.__WIZ_VIS_GUARD__ = true;
@@ -820,11 +678,9 @@
     }
 
     onReady(function () {
-      var plans = getPlansContainer();
-      var compare =
-        document.querySelector("section.compare[aria-label='Compare features'], section.compare, .compare") ||
-        null;
-      var newsletters = document.querySelector("section[aria-label='Newsletters'], .newsletters") || null;
+      var plans = document.querySelector('section.plans[aria-label="Plans"]');
+      var compare = document.querySelector('section.compare[aria-label="Compare features"]');
+      var newsletters = document.querySelector('section[aria-label="Newsletters"]');
       var content1 = document.getElementById("content1");
       var content4 = document.getElementById("content4");
       var content6 = document.getElementById("content6");
@@ -874,7 +730,7 @@
           childList: true,
           subtree: true,
           attributes: true,
-          attributeFilter: ["style", "class", "hidden"]
+          attributeFilter: ["style", "class"]
         });
       }
 
@@ -882,6 +738,9 @@
     });
   })();
 
+  /* ============================================================
+     SECTION J — MOBILE NL CARD PATCH (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__MOBILE_NL_PATCH__) return;
     BNP.__MOBILE_NL_PATCH__ = true;
@@ -928,6 +787,24 @@
       document.head.appendChild(el);
     }
 
+    function measureText(t, refEl) {
+      var probe = document.createElement("span");
+      var cs = window.getComputedStyle(refEl);
+      probe.textContent = t;
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.fontFamily = cs.fontFamily;
+      probe.style.fontSize = cs.fontSize;
+      probe.style.fontWeight = cs.fontWeight;
+      probe.style.letterSpacing = cs.letterSpacing;
+      probe.style.lineHeight = "1";
+      document.body.appendChild(probe);
+      var w = Math.ceil(probe.getBoundingClientRect().width);
+      document.body.removeChild(probe);
+      return w;
+    }
+
     function ensureInnerLane(cta) {
       var existing = cta.querySelector(".nl-cta-inner");
       if (existing) return existing;
@@ -963,6 +840,27 @@
       }
     }
 
+    function layoutCTA(cta) {
+      var inner = cta.querySelector(".nl-cta-inner") || ensureInnerLane(cta);
+      var label = inner.querySelector(".label");
+      var state = inner.querySelector(".state");
+      var track = inner.querySelector(".track");
+      if (!label || !state || !track) return;
+
+      var maxState = Math.max(measureText("On", state), measureText("Off", state));
+      state.style.display = "inline-block";
+      state.style.width = (maxState + 2) + "px";
+
+      var labelW = Math.ceil(label.getBoundingClientRect().width);
+      var lane = labelW + 10 + 36 + 10 + (maxState + 2);
+      inner.style.width = lane + "px";
+      inner.style.maxWidth = lane + "px";
+
+      track.style.width = "36px";
+      track.style.height = "20px";
+      track.style.overflow = "hidden";
+    }
+
     function applyMode() {
       var isMobile = window.innerWidth <= MOBILE_MAX;
       var ready = hasPlanSelected();
@@ -976,6 +874,7 @@
           compactCard(card);
           if (ready) {
             showInline(cta);
+            layoutCTA(cta);
           } else {
             hideEl(cta);
           }
@@ -1021,6 +920,9 @@
     onReady(init);
   })();
 
+  /* ============================================================
+     SECTION K — COMPACT CHECKBOXES (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__COMPACT_CHECKBOXES__) return;
     BNP.__COMPACT_CHECKBOXES__ = true;
@@ -1121,12 +1023,15 @@
     setInterval(function () { run(); }, 1200);
   })();
 
+  /* ============================================================
+     SECTION L — HERO BACKGROUND (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__HERO_BG__) return;
     BNP.__HERO_BG__ = true;
 
     onReady(function () {
-      var plans = getPlansContainer();
+      var plans = document.querySelector("section.plans");
       if (!plans) return;
 
       var bg = document.createElement("div");
@@ -1187,6 +1092,10 @@
     });
   })();
 
+  /* ============================================================
+     SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
+     (REQUIRED LOGIC REMOVED) + VISIBILITY HARDENING FOR TILES
+     ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
     BNP.__ORCH1__ = true;
@@ -1207,22 +1116,67 @@
     function show(el) {
       if (!el) return;
 
+      try { el.hidden = false; } catch (e) {}
+      try { el.style.visibility = "visible"; } catch (e) {}
+      try { el.style.opacity = "1"; } catch (e) {}
+      try { el.style.pointerEvents = "auto"; } catch (e) {}
+
       var prev = el.dataset && el.dataset.__prevDisplay;
       if (prev && prev !== "none") {
         el.style.display = prev;
+        if (getComputedStyle(el).display === "none") el.style.display = "block";
+        return;
+      }
+
+      if (el.matches("section.plans, section.compare, section.hero")) {
+        el.style.removeProperty("display");
+        if (getComputedStyle(el).display === "none") el.style.display = "block";
+        return;
+      }
+
+      if (
+        el.matches("#content1, #content4, #content6, section[aria-label='Newsletters']") ||
+        /^content(1|4|6)$/.test(el.id || "")
+      ) {
+        el.style.display = "block";
         return;
       }
 
       el.style.removeProperty("display");
-      el.style.removeProperty("visibility");
-      el.style.removeProperty("opacity");
-
       if (getComputedStyle(el).display === "none") el.style.display = "block";
+    }
+
+    function forceShowPlansNow() {
+      var plans = document.querySelector("section.plans[aria-label='Plans'], section.plans");
+      if (!plans) return;
+
+      try { plans.hidden = false; } catch (e) {}
+      plans.style.display = "block";
+      plans.style.visibility = "visible";
+      plans.style.opacity = "1";
+      plans.style.pointerEvents = "auto";
+
+      var cards = plans.querySelectorAll(".card, article");
+      cards.forEach(function (c) {
+        if (!c) return;
+        try { c.hidden = false; } catch (e) {}
+        c.style.removeProperty("display");
+        c.style.visibility = "visible";
+        c.style.opacity = "1";
+        c.style.pointerEvents = "auto";
+        if (getComputedStyle(c).display === "none") c.style.display = "block";
+      });
     }
 
     function scrollToHeaderNow() {
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
+
+    // REQUIRED LOGIC REMOVED (NO-OPS)
+    function enforceRequiredNow() {}
+    function prepareStepValidation() {}
+    function stepIsValidSimple() { return true; }
+    function validateStep() { return { ok: true }; }
 
     var COUNTRY_DROPDOWN_ID = "#id7";
     var WRAPPER_SELECTORS = [
@@ -1409,10 +1363,8 @@
     function applyRatesToTiles(rates) {
       var period = currentPeriod();
       var region = CACHE.region || "usa";
-      var plansContainer = getPlansContainer();
-      if (!plansContainer) return;
 
-      $all(".card, article", plansContainer).forEach(function (tile) {
+      $all("section.plans .card, section.plans article").forEach(function (tile) {
         var amountEl = tile.querySelector(".price .amount");
         var perEl = tile.querySelector(".price .per");
         if (!amountEl || !perEl) return;
@@ -1442,7 +1394,9 @@
         CACHE.period = currentPeriod();
         CACHE.rates = bestRatesNow();
         if (CACHE.rates) applyRatesToTiles(CACHE.rates);
-      } catch (e) {}
+      } catch (e) {
+        console.warn("applyPricesNow error:", e);
+      }
     }
 
     function initCountryListener() {
@@ -1566,10 +1520,28 @@
       if (annualBtn) annualBtn.addEventListener("click", function () { setPeriod("yearly"); });
       if (monthlyBtn) monthlyBtn.addEventListener("click", function () { setPeriod("monthly"); });
 
+      var prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      if (!prefersReduced && "IntersectionObserver" in window) {
+        var obs = new IntersectionObserver(function (entries, io) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              io.unobserve(e.target);
+            }
+          });
+        }, { threshold: 0.08 });
+
+        $all(".card.reveal, .card").forEach(function (el) { obs.observe(el); });
+      } else {
+        $all(".card").forEach(function (el) { el.classList.add("in"); });
+      }
+
       var y = document.getElementById("year");
       if (y) y.textContent = new Date().getFullYear();
     }
 
+    /* ---------- Requested Version (ACHR vs Weekly Chill) ---------- */
     var __RV_HOSTS_CACHE = null;
 
     function _normRVLabel(s) {
@@ -1681,6 +1653,7 @@
       return _pickRequestedVersionHost(host, weeklyYes ? "digital" : "do not want");
     }
 
+    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
     function decodeRateRow(li) {
       if (!li) return null;
       var cls = li.className || "";
@@ -1804,6 +1777,7 @@
       });
     }
 
+    /* --------- Yes/No set with ID-first, TEXT-fallback --------- */
     function setYesNoByQuestionText(questionIncludes, yesOrNo) {
       var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
       var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -1866,21 +1840,21 @@
     }
 
     function attachTileClickSelection() {
-      var root = getPlansContainer();
+      var root = $("section.plans");
       if (!root) return;
       if (root.dataset.__tileClickBound === "1") return;
       root.dataset.__tileClickBound = "1";
 
       root.addEventListener("click", function (ev) {
-        var card = ev.target && ev.target.closest && ev.target.closest("article.card, article, .card");
+        var card = ev.target && ev.target.closest && ev.target.closest("article.card, article");
         if (!card) return;
 
         try {
-          $all(".card.selected, article.selected", root).forEach(function (n) { n.classList.remove("selected"); });
+          $all("section.plans article.card.selected, section.plans article.selected").forEach(function (n) { n.classList.remove("selected"); });
           card.classList.add("selected");
         } catch (e) {}
 
-        var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || text(card) || "").toLowerCase();
+        var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
         var kind =
           /fan only/i.test(title) ? "fan" :
           /ac\s*pro\s*\+\s*print|print/i.test(title) ? "print" :
@@ -1903,9 +1877,11 @@
 
         if (kind === "fan") {
           clearAllRateRadios();
+
           setNewsAndWeekly(true, false);
           setAchRequestedVersion("digital");
           setWeeklyRequestedVersion(false);
+
           CACHE.product = null;
           if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
           return;
@@ -1919,14 +1895,15 @@
       }, true);
     }
 
+    /* ---------- FLOW WIZARD (PAYMENT: move ORIGINAL submit into modal bar, centered) ---------- */
     function setupFlowWizard() {
       if (!window.__BNP_FLOW_WIZ_RETRY) window.__BNP_FLOW_WIZ_RETRY = 0;
 
-      var hero = document.querySelector("section.hero, .hero") || null;
-      var plans = getPlansContainer();
-      var compare = document.querySelector("section.compare[aria-label='Compare features'], section.compare, .compare") || null;
-      var newsletters = document.querySelector("section[aria-label='Newsletters'], .newsletters") || null;
-      var faq = document.querySelector(".faq-section, section.faq-section") || null;
+      var hero = $("section.hero");
+      var plans = $("section.plans[aria-label='Plans'], section.plans");
+      var compare = $("section.compare[aria-label='Compare features'], section.compare");
+      var newsletters = $("section[aria-label='Newsletters']");
+      var faq = $(".faq-section");
       var content1 = document.getElementById("content1");
       var content4 = document.getElementById("content4");
       var content6 = document.getElementById("content6");
@@ -1935,87 +1912,17 @@
       var backdrop = document.getElementById("modal-backdrop");
 
       if (!plans || !content1 || !content6) {
-        if (window.__BNP_FLOW_WIZ_RETRY < 40) {
+        if (window.__BNP_FLOW_WIZ_RETRY < 20) {
           window.__BNP_FLOW_WIZ_RETRY++;
-          setTimeout(setupFlowWizard, 125);
+          setTimeout(setupFlowWizard, 150);
         }
         return;
       }
 
-      function forceShowPlansHard() {
-        try {
-          if (typeof window.__BNP_REVIVE_TILES__ === "function") window.__BNP_REVIVE_TILES__();
-        } catch (e) {}
-
-        var anyStepOpen =
-          (newsletters && isVisible(newsletters)) ||
-          (content1 && isVisible(content1)) ||
-          (content4 && isVisible(content4)) ||
-          (content6 && (content6.classList.contains("modal-open") && isVisible(content6)));
-
-        if (anyStepOpen) return;
-
-        try {
-          if (hero) {
-            hero.style.removeProperty("display");
-            hero.style.removeProperty("visibility");
-            hero.style.removeProperty("opacity");
-            hero.hidden = false;
-            hero.removeAttribute("hidden");
-            if (getComputedStyle(hero).display === "none") hero.style.setProperty("display", "block", "important");
-          }
-
-          if (plans) {
-            plans.style.removeProperty("display");
-            plans.style.removeProperty("visibility");
-            plans.style.removeProperty("opacity");
-            plans.hidden = false;
-            plans.removeAttribute("hidden");
-            if (getComputedStyle(plans).display === "none") plans.style.setProperty("display", "block", "important");
-          }
-
-          if (compare) {
-            compare.style.removeProperty("display");
-            compare.style.removeProperty("visibility");
-            compare.style.removeProperty("opacity");
-            compare.hidden = false;
-            compare.removeAttribute("hidden");
-            if (getComputedStyle(compare).display === "none") compare.style.setProperty("display", "block", "important");
-          }
-
-          if (faq) {
-            faq.style.removeProperty("display");
-            faq.style.removeProperty("visibility");
-            faq.style.removeProperty("opacity");
-            faq.hidden = false;
-            faq.removeAttribute("hidden");
-          }
-
-          if (promoBar) {
-            promoBar.style.removeProperty("display");
-            promoBar.style.removeProperty("visibility");
-            promoBar.style.removeProperty("opacity");
-            promoBar.hidden = false;
-            promoBar.removeAttribute("hidden");
-          }
-
-          if (promoToggle) {
-            promoToggle.style.removeProperty("display");
-            promoToggle.style.removeProperty("visibility");
-            promoToggle.style.removeProperty("opacity");
-            promoToggle.hidden = false;
-            promoToggle.removeAttribute("hidden");
-          }
-
-          document.documentElement.classList.remove("payment-open");
-          document.body.classList.remove("payment-open");
-          if (backdrop) backdrop.style.display = "none";
-          if (content6) {
-            content6.classList.remove("modal-open");
-            if (!content6.classList.contains("payment-preload-hidden")) content6.classList.add("payment-preload-hidden");
-          }
-        } catch (e) {}
-      }
+      forceShowPlansNow();
+      show(hero);
+      show(plans);
+      show(compare);
 
       function submitViaNative(stepRoot) {
         var root = stepRoot || document;
@@ -2028,11 +1935,20 @@
           root.querySelector('button[type="submit"], input[type="submit"]') ||
           form.querySelector('button[type="submit"], input[type="submit"]');
 
-        if (btn) { try { btn.click(); } catch (e) {} return; }
-        if (form.requestSubmit) { try { form.requestSubmit(); } catch (e) {} return; }
+        if (btn) {
+          try { btn.click(); } catch (e) {}
+          return;
+        }
+
+        if (form.requestSubmit) {
+          try { form.requestSubmit(); } catch (e) {}
+          return;
+        }
+
         try { form.submit(); } catch (e) {}
       }
 
+      // Action bar
       var actions = document.createElement("div");
       actions.className = "nl-actions";
       actions.style.cssText =
@@ -2076,6 +1992,7 @@
         el.style.transition = "background-color 0.3s";
       }
 
+      // Track original submit wrapper location
       var submitDock = { wrap: null, parent: null, nextSibling: null };
 
       function findOriginalPaymentSubmitWrapper() {
@@ -2128,6 +2045,7 @@
 
         var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"], button:not([type])');
         if (realBtn) {
+          // Force plain submit, no JS hijack
           try { realBtn.removeAttribute("onclick"); } catch (e) {}
           try { realBtn.onclick = null; } catch (e) {}
           if (realBtn.tagName === "BUTTON") {
@@ -2158,7 +2076,6 @@
       function updateButtons() {
         if (step === "plans") {
           hide(actions);
-          forceShowPlansHard();
           return;
         }
         show(actions);
@@ -2174,8 +2091,6 @@
         if (step === "newsletters" || step === "content1") nextBtn.textContent = "Next";
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
         else if (step === "content6") nextBtn.textContent = "Complete Payment";
-
-        try { nextBtn.disabled = false; } catch (e) {}
       }
 
       function preloadPaymentStep() {
@@ -2228,12 +2143,12 @@
       function goToNewsletters(kind) {
         chosenKind = kind;
 
-        if (hero) hide(hero);
+        hide(hero);
         hide(plans);
-        if (compare) hide(compare);
-        if (faq) hide(faq);
-        if (promoBar) hide(promoBar);
-        if (promoToggle) hide(promoToggle);
+        hide(compare);
+        hide(faq);
+        hide(promoBar);
+        hide(promoToggle);
 
         if (newsletters) {
           show(newsletters);
@@ -2275,12 +2190,14 @@
       }
 
       function backToPlans() {
-        if (hero) show(hero);
+        show(hero);
         show(plans);
-        if (compare) show(compare);
-        if (faq) show(faq);
-        if (promoBar) show(promoBar);
-        if (promoToggle) show(promoToggle);
+        show(compare);
+        show(faq);
+        show(promoBar);
+        show(promoToggle);
+
+        forceShowPlansNow();
 
         if (newsletters) hide(newsletters);
         hide(content1);
@@ -2289,9 +2206,8 @@
         closePaymentModal();
         hide(actions);
 
-        step = "plans";
         updateButtons();
-        forceShowPlansHard();
+        step = "plans";
         scrollToHeaderNow();
       }
 
@@ -2355,16 +2271,40 @@
         }
       });
 
-      var planCards = $all(".card, article", plans);
-      planCards.forEach(function (card) {
+      (function attachNewslettersInlineNext() {
+        if (!newsletters) return;
+        var NEXT_SEL =
+          '[data-step-next],[data-action="next"],.btn-next,.next,.wizard-next,a[href="#next"],button[type="submit"],[type="submit"]';
+
+        newsletters.addEventListener("click", function (e) {
+          var btn = e.target && e.target.closest && e.target.closest(NEXT_SEL);
+          if (!btn || step !== "newsletters") return;
+          e.preventDefault();
+          e.stopPropagation();
+          goToContent1();
+        });
+
+        newsletters.addEventListener("keydown", function (e) {
+          if (step === "newsletters" && e.key === "Enter") {
+            e.preventDefault();
+            goToContent1();
+          }
+        }, true);
+      })();
+
+      $all("section.plans article.card, section.plans article").forEach(function (card) {
         if (card.dataset.__flowTileBound === "1") return;
         card.dataset.__flowTileBound = "1";
 
         card.addEventListener("click", function () {
-          $all(".card.selected, article.selected", plans).forEach(function (n) { n.classList.remove("selected"); });
+          forceShowPlansNow();
+
+          $all("section.plans article.card.selected, section.plans article.selected").forEach(function (n) {
+            n.classList.remove("selected");
+          });
           card.classList.add("selected");
 
-          var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || text(card) || "").toLowerCase();
+          var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
           chosenFree = /free/.test(title);
 
           if (/ac\s*pro\s*\+\s*print|print/.test(title)) goToNewsletters("print");
@@ -2373,12 +2313,14 @@
         }, true);
       });
 
-      if (hero) show(hero);
+      show(hero);
       show(plans);
-      if (compare) show(compare);
-      if (faq) show(faq);
-      if (promoBar) show(promoBar);
-      if (promoToggle) show(promoToggle);
+      show(compare);
+      show(faq);
+      show(promoBar);
+      show(promoToggle);
+
+      forceShowPlansNow();
 
       if (newsletters) hide(newsletters);
       hide(content1);
@@ -2392,22 +2334,11 @@
         if (w) w.style.display = "none";
       } catch (e) {}
 
+      // Final safety: if any legacy markup references checkPayment, keep it harmless
       if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
 
       step = "plans";
       updateButtons();
-
-      forceShowPlansHard();
-      setTimeout(forceShowPlansHard, 0);
-      setTimeout(forceShowPlansHard, 120);
-      setTimeout(forceShowPlansHard, 300);
-      setTimeout(forceShowPlansHard, 700);
-      setTimeout(forceShowPlansHard, 1200);
-
-      if (window.MutationObserver) {
-        var mo = new MutationObserver(debounce(forceShowPlansHard, 60));
-        mo.observe(document.documentElement, { attributes: true, subtree: true, childList: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"] });
-      }
     }
 
     function initAll() {
@@ -2418,7 +2349,14 @@
       attachTileClickSelection();
 
       applyPricesNow();
+
+      forceShowPlansNow();
       setupFlowWizard();
+
+      if (window.MutationObserver) {
+        var mo = new MutationObserver(debounce(forceShowPlansNow, 120));
+        mo.observe(document.documentElement, { attributes: true, childList: true, subtree: true, attributeFilter: ["style", "class", "hidden"] });
+      }
 
       document.addEventListener("click", function (e) {
         var btn = e.target && e.target.closest && e.target.closest("button.btn-next[type='button'], button.btn-next");
@@ -2433,6 +2371,9 @@
     onReady(initAll);
   })();
 
+  /* ============================================================
+     SECTION N — GEO IP LOCATOR (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__GEO2__) return;
     BNP.__GEO2__ = true;
@@ -2521,6 +2462,9 @@
     onReady(run);
   })();
 
+  /* ============================================================
+     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first) (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
     BNP.__CART3__ = true;
@@ -2618,8 +2562,7 @@
     }
 
     function tilePriceFallback(kind) {
-      var plans = getPlansContainer();
-      var cards = plans ? QA(".card, article", plans) : QA(".plans .card, section.plans .card, section.plans article");
+      var cards = QA("section.plans .card, section.plans article");
       for (var i = 0; i < cards.length; i++) {
         var card = cards[i];
         var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
@@ -2635,8 +2578,7 @@
     }
 
     function currentKindFromTile() {
-      var plans = getPlansContainer();
-      var selCard = plans ? Q(".card.selected, article.selected", plans) : Q("section.plans .card.selected, section.plans article.selected");
+      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
       if (selCard) {
         var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
         if (/fan only/.test(title)) return "fan";
@@ -2685,6 +2627,7 @@
 
       if (!items.length && !totals.length) return;
 
+      // hard reset so we never duplicate
       items.forEach(function (el) { el.innerHTML = ""; });
 
       var total = 0;
@@ -2763,13 +2706,13 @@
       var country = Q("#id7");
       if (country) country.addEventListener("change", burstSync, { passive: true });
 
-      var plans = getPlansContainer();
+      var plans = Q("section.plans");
       if (plans) {
         plans.addEventListener("click", function (e) {
           var card = e.target.closest && e.target.closest(".card, article");
           if (!card) return;
 
-          QA(".card.selected, article.selected", plans).forEach(function (n) { n.classList.remove("selected"); });
+          QA("section.plans .card.selected, section.plans article.selected").forEach(function (n) { n.classList.remove("selected"); });
           card.classList.add("selected");
           burstSync();
         }, true);
@@ -2785,9 +2728,53 @@
       });
     }
 
+    function onceWhenShownScroll() {
+      if (!window.MutationObserver) return;
+
+      var targets = ["#content1", "#content4"].map(function (s) { return Q(s); }).filter(Boolean);
+      if (!targets.length) return;
+
+      var was = new WeakMap();
+
+      function isShown(el) {
+        return !!el && el.offsetParent !== null && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden";
+      }
+
+      function findScrollParent(n) {
+        for (var cur = n && n.parentElement; cur; cur = cur.parentElement) {
+          var s = getComputedStyle(cur);
+          if ((s.overflowY === "auto" || s.overflowY === "scroll") && cur.scrollHeight > cur.clientHeight) return cur;
+        }
+        return null;
+      }
+
+      function snap(el) {
+        try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
+        var scp = findScrollParent(el);
+        if (scp) try { scp.scrollTop = 0; } catch (e) {}
+
+        setTimeout(function () {
+          try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
+          if (scp) try { scp.scrollTop = 0; } catch (e) {}
+        }, 60);
+      }
+
+      var mo = new MutationObserver(function () {
+        targets.forEach(function (t) {
+          var vis = isShown(t);
+          var prev = was.get(t) || false;
+          if (vis && !prev) snap(t);
+          was.set(t, vis);
+        });
+      });
+
+      mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+    }
+
     function init() {
       watchInputs();
       watchPricingBlocks();
+      onceWhenShownScroll();
 
       window.__FORCE_CART_SYNC = burstSync;
       burstSync();
@@ -2796,6 +2783,9 @@
     onReady(init);
   })();
 
+  /* ============================================================
+     SECTION P — ACHR CHILL MONTHLY HIDE PATCH (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__CHILL_HIDE__) return;
     BNP.__CHILL_HIDE__ = true;
@@ -2818,9 +2808,7 @@
 
     function updateChillVisibility() {
       var period = getPeriod();
-      var plans = getPlansContainer();
-
-      (plans ? $all(".card, article", plans) : Array.from(document.querySelectorAll("section.plans .card, section.plans article"))).forEach(function (card) {
+      document.querySelectorAll("section.plans .card, section.plans article").forEach(function (card) {
         if (!isChillCard(card)) return;
         if (period === "monthly") card.style.display = "none";
         else card.style.removeProperty("display");
@@ -2854,6 +2842,9 @@
     onReady(init);
   })();
 
+  /* ============================================================
+     SECTION Q — CAMPAIGN QUOTED TEXT -> TILE FINE PRINT (ORIGINAL)
+     ============================================================ */
   (function () {
     if (BNP.__FINE_PRINT__) return;
     BNP.__FINE_PRINT__ = true;
@@ -2962,8 +2953,8 @@
       var fineMap = collectCampaignFinePrint();
       if (!Object.keys(fineMap).length) return;
 
-      var root = getPlansContainer() || document;
-      var cards = qsa("article.card, article, .card", root);
+      var root = qs("section.plans") || document;
+      var cards = qsa("article.card, article", root);
       var period = detectCurrentPeriodSafe();
 
       cards.forEach(function (card) {
@@ -3010,4 +3001,393 @@
   })();
 
 })();
-```
+
+
+/* =====================================================================================
+SECONDARY SCRIPT — REQUIRED FIELDS ONLY (ADD THIS AFTER THE MASTER)
+===================================================================================== */
+
+(function () {
+  "use strict";
+
+  if (!window.__BNP_MASTER__) window.__BNP_MASTER__ = {};
+  var BNP = window.__BNP_MASTER__;
+  if (BNP.__REQUIRED_ONLY__) return;
+  BNP.__REQUIRED_ONLY__ = true;
+
+  function onReady(fn) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
+    else fn();
+  }
+  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+  function text(el) { return ((el && (el.innerText || el.textContent)) || "").trim(); }
+
+  function isEmptyValue(v) { return !String(v == null ? "" : v).trim(); }
+
+  function looksLikeEmailField(el) {
+    if (!el) return false;
+    var t = (el.getAttribute("type") || "").toLowerCase();
+    if (t === "email") return true;
+    if (el.id === "id13") return true;
+    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
+    return false;
+  }
+
+  function isValidEmail(v) {
+    var s = String(v || "").trim();
+    if (!s) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  }
+
+  function isFieldVisible(el) {
+    if (!el) return false;
+    if (el.type === "hidden") return false;
+    if (el.disabled) return false;
+
+    var p = el;
+    while (p && p !== document.body) {
+      var pcs = getComputedStyle(p);
+      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
+      p = p.parentElement;
+    }
+
+    var cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    if (el.offsetParent === null && cs.position !== "fixed") {
+      var r = el.getBoundingClientRect();
+      if ((r.width === 0 && r.height === 0)) return false;
+    }
+    return true;
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    var cs = getComputedStyle(el);
+    return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
+  }
+
+  function debounce(fn, ms) {
+    var t = null;
+    return function () {
+      var args = arguments;
+      clearTimeout(t);
+      t = setTimeout(function () { fn.apply(null, args); }, ms);
+    };
+  }
+
+  function ensureStyles() {
+    if (document.getElementById("bnp-required-style")) return;
+    var s = document.createElement("style");
+    s.id = "bnp-required-style";
+    s.textContent = `
+      .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
+      .bnp-inline-error {
+        display:none;
+        margin-top:6px;
+        font-size:12px;
+        line-height:1.35;
+        color:#b00000;
+        font-weight:600;
+      }
+      .bnp-inline-error.is-on { display:block; }
+      .bnp-req-star { display:inline !important; color:#b00000 !important; font-weight:700 !important; margin-left:4px !important; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  function shouldExcludeRequired(field) {
+    if (!field) return true;
+    if (field.disabled) return true;
+    var type = (field.getAttribute("type") || "").toLowerCase();
+    if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return true;
+
+    // Exclusions: Cell phone + sms opt-in blocks/ids
+    if (field.closest && field.closest("#p124, #ps3")) return true;
+    if (field.id === "id124" || field.id === "id974" || field.id === "id124_ccc") return true;
+    if (field.id === "smss3") return true;
+
+    return false;
+  }
+
+  function setRequired(field, on) {
+    if (!field) return;
+    try {
+      if (on) {
+        field.setAttribute("aria-required", "true");
+        field.dataset.__bnpForcedReq = "1";
+        if (field.tagName === "INPUT" || field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
+          field.required = true;
+        }
+      } else {
+        if (field.dataset && field.dataset.__bnpForcedReq === "1") {
+          field.removeAttribute("aria-required");
+          try { field.required = false; } catch (e) {}
+          delete field.dataset.__bnpForcedReq;
+        }
+      }
+    } catch (e) {}
+  }
+
+  function enforceRequiredForSection(sectionId) {
+    var section = document.getElementById(sectionId);
+    if (!section) return;
+
+    var fields = $all("input,select,textarea", section);
+    fields.forEach(function (f) {
+      if (shouldExcludeRequired(f)) { setRequired(f, false); return; }
+      if (isFieldVisible(f)) setRequired(f, true);
+      else setRequired(f, false);
+    });
+
+    if (sectionId === "content1") {
+      var email = document.getElementById("id13");
+      if (email && !shouldExcludeRequired(email) && isFieldVisible(email)) setRequired(email, true);
+    }
+  }
+
+  function enforceRequiredNow() {
+    enforceRequiredForSection("content1");
+    enforceRequiredForSection("content4");
+  }
+
+  function closestQuestionBlock(el) {
+    if (!el) return null;
+    return (
+      el.closest("p[id^='p']") ||
+      el.closest(".drg-element") ||
+      el.closest(".form-group") ||
+      el.closest(".question") ||
+      null
+    );
+  }
+
+  function getLabelForField(field, scope) {
+    if (!field) return null;
+
+    if (field.id) {
+      var lbl = (scope || document).querySelector("label[for='" + field.id + "']");
+      if (lbl) return lbl;
+      lbl = document.querySelector("label[for='" + field.id + "']");
+      if (lbl) return lbl;
+    }
+
+    var wrapped = field.closest && field.closest("label");
+    if (wrapped) return wrapped;
+
+    var block = closestQuestionBlock(field);
+    if (block) {
+      var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
+      if (ql) return ql;
+    }
+
+    return null;
+  }
+
+  function ensureReqStarOnLabel(labelEl) {
+    if (!labelEl) return;
+    if (labelEl.querySelector(".bnp-req-star")) return;
+    var star = document.createElement("span");
+    star.className = "bnp-req-star";
+    star.textContent = "*";
+    labelEl.appendChild(star);
+  }
+
+  function isRequiredLike(field, block) {
+    if (!field) return false;
+    if (field.required) return true;
+    if ((field.getAttribute && field.getAttribute("aria-required")) === "true") return true;
+
+    if (block) {
+      if (block.querySelector(".bnp-req-star")) return true;
+      if (block.classList && (block.classList.contains("required") || block.classList.contains("req"))) return true;
+      if (block.getAttribute && (block.getAttribute("data-required") === "true" || block.getAttribute("aria-required") === "true")) return true;
+    }
+    return false;
+  }
+
+  function ensureInlineError(block) {
+    if (!block) return null;
+    var e = block.querySelector(".bnp-inline-error");
+    if (e) return e;
+
+    e = document.createElement("div");
+    e.className = "bnp-inline-error";
+    block.appendChild(e);
+    return e;
+  }
+
+  function clearInvalidMarks(stepRoot) {
+    if (!stepRoot) return;
+    $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
+    $all(".bnp-inline-error", stepRoot).forEach(function (e) {
+      e.classList.remove("is-on");
+      e.textContent = "";
+    });
+    $all("input,select,textarea", stepRoot).forEach(function (el) {
+      try { el.removeAttribute("aria-invalid"); } catch (e) {}
+    });
+  }
+
+  function markRequiredIndicators(stepRoot) {
+    if (!stepRoot) return;
+
+    var fields = $all("input, select, textarea", stepRoot).filter(function (f) {
+      if (!f || f.disabled) return false;
+      if (!isFieldVisible(f)) return false;
+      return true;
+    });
+
+    fields.forEach(function (f) {
+      var block = closestQuestionBlock(f);
+      if (!block) return;
+
+      if (f.type === "radio" && f.name) {
+        var radios = $all("input[type='radio'][name='" + f.name.replace(/'/g, "\\'") + "']", stepRoot).filter(isFieldVisible);
+        if (!radios.length) return;
+        var rep = radios[0];
+        var b = closestQuestionBlock(rep) || block;
+        if (!isRequiredLike(rep, b)) return;
+        var lbl = b.querySelector(".questionlabel label") || getLabelForField(rep, stepRoot);
+        ensureReqStarOnLabel(lbl);
+        return;
+      }
+
+      if (!isRequiredLike(f, block)) return;
+      var lbl2 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
+      ensureReqStarOnLabel(lbl2);
+    });
+  }
+
+  function validateStep(stepId) {
+    ensureStyles();
+    enforceRequiredNow();
+
+    var root = document.getElementById(stepId);
+    if (!root) return { ok: true };
+
+    markRequiredIndicators(root);
+    clearInvalidMarks(root);
+
+    var required = $all("input[required], select[required], textarea[required], [aria-required='true']", root).filter(function (el) {
+      if (!el || el.disabled) return false;
+      if (!isFieldVisible(el)) return false;
+      return true;
+    });
+
+    for (var i = 0; i < required.length; i++) {
+      var el = required[i];
+
+      if (el.type === "radio" && el.name) {
+        var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
+          .filter(isFieldVisible)
+          .some(function (r) { return r.checked; });
+
+        if (!any) {
+          var b1 = closestQuestionBlock(el) || el;
+          if (b1 && b1.classList) b1.classList.add("bnp-invalid");
+          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+          var e1 = ensureInlineError(b1);
+          if (e1) { e1.textContent = "Please choose an option."; e1.classList.add("is-on"); }
+          return { ok: false, focusEl: el };
+        }
+      } else if (el.type === "checkbox") {
+        if (!el.checked) {
+          var b2 = closestQuestionBlock(el) || el;
+          if (b2 && b2.classList) b2.classList.add("bnp-invalid");
+          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+          var e2 = ensureInlineError(b2);
+          if (e2) { e2.textContent = "Please check the box to continue."; e2.classList.add("is-on"); }
+          return { ok: false, focusEl: el };
+        }
+      } else {
+        if (isEmptyValue(el.value)) {
+          var b3 = closestQuestionBlock(el) || el;
+          if (b3 && b3.classList) b3.classList.add("bnp-invalid");
+          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+          var e3 = ensureInlineError(b3);
+          if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
+          return { ok: false, focusEl: el };
+        }
+        if (looksLikeEmailField(el) && !isValidEmail(el.value)) {
+          var bE = closestQuestionBlock(el) || el;
+          if (bE && bE.classList) bE.classList.add("bnp-invalid");
+          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+          var eE = ensureInlineError(bE);
+          if (eE) { eE.textContent = "Enter a valid email address."; eE.classList.add("is-on"); }
+          return { ok: false, focusEl: el };
+        }
+      }
+    }
+
+    return { ok: true };
+  }
+
+  function currentVisibleStepId() {
+    var c6 = document.getElementById("content6");
+    if (c6 && isVisible(c6) && c6.classList.contains("modal-open")) return "content6";
+
+    var c4 = document.getElementById("content4");
+    if (c4 && isVisible(c4)) return "content4";
+
+    var c1 = document.getElementById("content1");
+    if (c1 && isVisible(c1)) return "content1";
+
+    return null;
+  }
+
+  function bindGuards() {
+    document.addEventListener("click", function (e) {
+      var btn = e.target && e.target.closest && e.target.closest(".nl-actions .btn-next");
+      if (!btn) return;
+
+      var stepId = currentVisibleStepId();
+      if (stepId === "content1" || stepId === "content4") {
+        var res = validateStep(stepId);
+        if (!res.ok) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (res.focusEl && res.focusEl.scrollIntoView) res.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            if (res.focusEl && res.focusEl.focus) res.focusEl.focus({ preventScroll: true });
+          } catch (err) {}
+          return false;
+        }
+      }
+    }, true);
+
+    var form = document.querySelector("form");
+    if (form && !form.dataset.__bnpRequiredGuard) {
+      form.dataset.__bnpRequiredGuard = "1";
+      form.addEventListener("submit", function (ev) {
+        enforceRequiredNow();
+
+        var stepId = currentVisibleStepId();
+        if (stepId === "content1" || stepId === "content4") {
+          var res = validateStep(stepId);
+          if (!res.ok) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return false;
+          }
+        }
+      }, true);
+    }
+  }
+
+  function init() {
+    ensureStyles();
+    enforceRequiredNow();
+
+    if (window.MutationObserver) {
+      var t1 = document.getElementById("content1");
+      var t4 = document.getElementById("content4");
+      var mo = new MutationObserver(debounce(enforceRequiredNow, 120));
+      if (t1) mo.observe(t1, { attributes: true, childList: true, subtree: true });
+      if (t4) mo.observe(t4, { attributes: true, childList: true, subtree: true });
+    }
+
+    bindGuards();
+  }
+
+  onReady(init);
+})();
