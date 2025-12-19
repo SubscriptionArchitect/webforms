@@ -1,9 +1,28 @@
 /* =====================================================================================
-NEWS PRO SITE MASTER SCRIPT
-Brandon Decker
-UX LAB
-Updated: 12/17/2025
+   BNP MASTER SCRIPT (All originals + fixes, rolled into one)
+   Updated: 12/17/2025
 
+   Includes:
+   - Payment-safe submit guard (prevents form.submit() bypass)
+   - ZIP -> City/State helper (fail-safe hide)
+   - FAQ accordion (single-open)
+   - Icon injection
+   - Tile alignment
+   - Newsletter sync (hidden inputs <-> toggles)
+   - Action bar alignment
+   - Wizard visibility guard (payment-safe)
+   - Mobile NL card patch (gated CTA)
+   - Compact checkboxes (Firefox-safe)
+   - Hero background animation
+   - FULL Subscribe + Pricing Orchestrator (NO GEO)
+   - GEO IP locator (separate)
+   - CART force-sync (original Section 3) + Cart Summary Sync add-on
+   - ACHR Chill monthly hide patch
+   - Campaign quoted text -> tile fine print
+
+   FIXES IN THIS VERSION:
+   - Payment step now MOVES the real DF submit container (#submitbtn) into the payment modal action bar (no proxy).
+   - Cart price now updates from the SELECTED RADIO more reliably (term2/term3/month text parsing + per fallback).
 ===================================================================================== */
 
 (function () {
@@ -38,14 +57,6 @@ Updated: 12/17/2025
     var cs = getComputedStyle(el);
     return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
   }
-  function isFieldVisible(el) {
-    if (!el) return false;
-    if (el.type === "hidden") return false;
-    var cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") return false;
-    return true;
-  }
   function debounce(fn, ms) {
     var t = null;
     return function () {
@@ -56,27 +67,7 @@ Updated: 12/17/2025
   }
 
   /* ============================================================
-     DEFENSIVE: HARD-KILL #bnp-cart-summary IF IT EVER APPEARS
-     ============================================================ */
-  (function () {
-    if (BNP.__KILL_BNP_CART_SUMMARY__) return;
-    BNP.__KILL_BNP_CART_SUMMARY__ = true;
-
-    function kill() {
-      var el = document.getElementById("bnp-cart-summary");
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }
-
-    onReady(function () {
-      kill();
-      if (!window.MutationObserver) return;
-      var mo = new MutationObserver(function () { kill(); });
-      mo.observe(document.documentElement, { childList: true, subtree: true });
-    });
-  })();
-
-  /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUUARD (ORIGINAL)
+     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
@@ -1200,156 +1191,39 @@ Updated: 12/17/2025
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
 
-    // ---------- STRONG REQUIRED VALIDATION (NEW) ----------
-    function ensureValidationStyles() {
-      if (document.getElementById("bnp-required-style")) return;
-      var s = document.createElement("style");
-      s.id = "bnp-required-style";
-      s.textContent = `
-        .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
-        .bnp-invalid input, .bnp-invalid select, .bnp-invalid textarea { border-color: #b00000 !important; }
-      `;
-      document.head.appendChild(s);
-    }
-
-    function clearInvalidMarks(stepRoot) {
-      if (!stepRoot) return;
-      $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
-    }
-
-    function closestQuestionBlock(el, stepRoot) {
-      if (!el) return null;
-      return (
-        el.closest("p[id^='p']") ||
-        el.closest(".drg-element") ||
-        el.closest(".form-group") ||
-        el.closest(".question") ||
-        (stepRoot || document).querySelector("p[id^='p']")
-      );
-    }
-
-    function isEmptyValue(v) {
-      return !String(v == null ? "" : v).trim();
-    }
-
-    function validateQuestionBlock(block) {
-      if (!block) return { ok: true };
-
-      var fields = $all("input, select, textarea", block).filter(function (el) {
-        if (!el) return false;
-        if (!isFieldVisible(el)) return false;
-        return true;
-      });
-
-      if (!fields.length) return { ok: true };
-
-      // If there is ANY checked radio/checkbox in the block, it's ok.
-      var radios = fields.filter(function (f) { return f.type === "radio"; });
-      if (radios.length) {
-        var anyChecked = radios.some(function (r) { return r.checked; });
-        return { ok: anyChecked, focusEl: (radios[0] || null) };
-      }
-
-      var cbs = fields.filter(function (f) { return f.type === "checkbox"; });
-      if (cbs.length) {
-        var anyCb = cbs.some(function (c) { return c.checked; });
-        return { ok: anyCb, focusEl: (cbs[0] || null) };
-      }
-
-      // Otherwise check text/select/textarea
-      for (var i = 0; i < fields.length; i++) {
-        var f = fields[i];
-        if (f.tagName === "SELECT") {
-          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
-        } else if (f.type === "email" || f.type === "text" || f.type === "tel" || f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA") {
-          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
-        } else {
-          // fallback
-          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f };
-        }
-      }
-      return { ok: true };
-    }
-
     function validateStep(stepId) {
-      ensureValidationStyles();
-
       var root = document.getElementById(stepId);
-      if (!root) return { ok: true };
+      if (!root) return true;
 
-      clearInvalidMarks(root);
-
-      // 1) HTML5 required attr pass
       var required = $all("input[required], select[required], textarea[required]", root).filter(function (el) {
         if (!el || el.disabled) return false;
-        if (!isFieldVisible(el)) return false;
+        if (el.type === "hidden") return false;
+        var cs = getComputedStyle(el);
+        if (cs.display === "none" || cs.visibility === "hidden") return false;
         return true;
       });
 
       for (var i = 0; i < required.length; i++) {
         var el = required[i];
-        if (el.type === "radio" && el.name) {
-          var any = $all('input[type="radio"][name="' + el.name + '"]', root).filter(isFieldVisible).some(function (r) { return r.checked; });
-          if (!any) {
-            var b1 = closestQuestionBlock(el, root) || el;
-            if (b1 && b1.classList) b1.classList.add("bnp-invalid");
-            return { ok: false, focusEl: el };
-          }
-        } else if (el.type === "checkbox") {
-          if (!el.checked) {
-            var b2 = closestQuestionBlock(el, root) || el;
-            if (b2 && b2.classList) b2.classList.add("bnp-invalid");
-            return { ok: false, focusEl: el };
+
+        if (el.type === "checkbox" || el.type === "radio") {
+          if (el.type === "radio" && el.name) {
+            var any = $all('input[type="radio"][name="' + el.name + '"]', root).some(function (r) {
+              return r.checked;
+            });
+            if (!any) return false;
+          } else if (el.type === "checkbox") {
+            if (!el.checked) return false;
           }
         } else {
-          if (isEmptyValue(el.value)) {
-            var b3 = closestQuestionBlock(el, root) || el;
-            if (b3 && b3.classList) b3.classList.add("bnp-invalid");
-            return { ok: false, focusEl: el };
-          }
+          if (!String(el.value || "").trim()) return false;
         }
       }
-
-      // 2) DragonForms "required star" pass
-      var starNodes = $all(".req-star, .reqStar, .required-star", root);
-      var blocks = [];
-      var seen = new Set();
-
-      starNodes.forEach(function (s) {
-        var block =
-          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
-          null;
-        if (block && !seen.has(block)) {
-          seen.add(block);
-          blocks.push(block);
-        }
-      });
-
-      for (var j = 0; j < blocks.length; j++) {
-        var b = blocks[j];
-        // Skip blocks that are not visible
-        if (!isVisible(b)) continue;
-
-        var res = validateQuestionBlock(b);
-        if (!res.ok) {
-          if (b.classList) b.classList.add("bnp-invalid");
-          return { ok: false, focusEl: res.focusEl || (b.querySelector("input,select,textarea") || b) };
-        }
-      }
-
-      return { ok: true };
+      return true;
     }
 
     var COUNTRY_DROPDOWN_ID = "#id7";
-    var WRAPPER_SELECTORS = [
-      ".campaign-placeholder",
-      ".standard-rates",
-      ".promo-key",
-      ".requested-version",
-      ".achr-requested-version",
-      ".wc-requested-version"
-    ];
-
+    var WRAPPER_SELECTORS = [".campaign-placeholder", ".standard-rates", ".promo-key", ".requested-version"];
     var CACHE = (BNP.__CACHE__ = BNP.__CACHE__ || { region: "usa", period: "yearly", rates: null, product: null });
 
     function ensureStylesAndBackdrop() {
@@ -1703,138 +1577,37 @@ Updated: 12/17/2025
       if (y) y.textContent = new Date().getFullYear();
     }
 
-    /* ---------- Requested Version (ACHR vs Weekly Chill) ---------- */
-    var __RV_HOSTS_CACHE = null;
+    function selectRequestedVersion(kind) {
+      var container = $(".requested-version");
+      if (!container) return;
 
-    function _normRVLabel(s) {
-      return (s || "")
-        .toLowerCase()
-        .replace(/\u00a0/g, " ")
-        .replace(/\s+/g, " ")
-        .replace(/[.:]+$/g, "")
-        .trim();
-    }
+      function pick(re) {
+        var label = $all("label", container).find(function (l) { return re.test(text(l).toLowerCase()); });
+        if (!label) return false;
 
-    function _wantRVLabel(kind) {
-      var k = _normRVLabel(kind);
-      if (k === "none" || k === "do not want" || k === "donotwant") return "do not want";
-      if (k === "print") return "print";
-      if (k === "digital") return "digital";
-      if (k === "both") return "both";
-      if (k === "no preference" || k === "nopreference") return "no preference";
-      return k;
-    }
+        var id = label.getAttribute("for");
+        var input = id ? document.getElementById(id) : null;
+        if (!input) return false;
 
-    function _pickRequestedVersionHost(hostEl, kind) {
-      if (!hostEl) return false;
-
-      var want = _wantRVLabel(kind);
-
-      // Prefer labels (more stable), but fall back to any radios
-      var radios = $all("input[type='radio']", hostEl);
-      if (!radios.length) return false;
-
-      function labelForRadio(r) {
-        if (!r) return null;
-        var lbl = null;
-        if (r.id) lbl = hostEl.querySelector("label[for='" + r.id + "']");
-        if (!lbl) lbl = document.querySelector("label[for='" + r.id + "']");
-        return lbl;
+        try { input.click(); } catch (e) {}
+        input.checked = true;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
       }
 
-      for (var i = 0; i < radios.length; i++) {
-        var r = radios[i];
-        var lbl = labelForRadio(r);
-        var t = _normRVLabel(text(lbl) || "");
-        if (!t) continue;
-
-        // Exact match first, then tolerant match
-        if (t === want || t.indexOf(want) !== -1) {
-          try { r.click(); } catch (e) {}
-          r.checked = true;
-          r.dispatchEvent(new Event("input", { bubbles: true }));
-          r.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        }
-      }
-
-      return false;
+      if (kind === "print") pick(/^\s*print\s*$/i);
+      else if (kind === "digital") pick(/^\s*digital\s*$/i);
+      else if (kind === "none") pick(/do\s*not\s*want/i);
     }
 
-    function _inferRequestedVersionHosts() {
-      if (__RV_HOSTS_CACHE) return __RV_HOSTS_CACHE;
-
-      var out = { achr: null, wc: null };
-
-      // Your new explicit wrappers (preferred)
-      out.achr = document.querySelector(".achr-requested-version") || null;
-      out.wc   = document.querySelector(".wc-requested-version") || null;
-      if (out.achr && out.wc) return (__RV_HOSTS_CACHE = out);
-
-      // Heuristic fallback (works even if wrappers aren’t present)
-      var scopes = $all(
-        ".achr-requested-version, .wc-requested-version, .requested-version, span.drg-element-type-requested-version, div.drg-element-type-requested-version"
-      );
-
-      // If we didn't find wrappers, try to classify the two RV blocks by what labels they contain
-      $all(".requested-version span.drg-element-type-requested-version, .requested-version div.drg-element-type-requested-version").forEach(function (sp) {
-        scopes.push(sp);
-      });
-
-      var seen = new Set();
-      scopes.forEach(function (sp) {
-        if (!sp || seen.has(sp)) return;
-        seen.add(sp);
-
-        var labels = $all("label", sp).map(function (l) { return _normRVLabel(text(l)); }).filter(Boolean);
-        if (!labels.length) return;
-
-        var hasPrint = labels.indexOf("print") >= 0;
-        var hasBoth  = labels.indexOf("both") >= 0;
-        var hasNoPref = labels.indexOf("no preference") >= 0;
-        var hasDigital = labels.indexOf("digital") >= 0;
-        var hasDoNot = labels.indexOf("do not want") >= 0;
-
-        // Weekly Chill RV is only: Digital + Do not want
-        if (!out.wc && hasDigital && hasDoNot && !hasPrint && !hasBoth && !hasNoPref && labels.length <= 2) {
-          out.wc = sp;
-          return;
-        }
-
-        // ACHR RV has Print/Both/No Preference (full set)
-        if (!out.achr && (hasPrint || hasBoth || hasNoPref)) {
-          out.achr = sp;
-          return;
-        }
-      });
-
-      return (__RV_HOSTS_CACHE = out);
-    }
-
-    function setAchRequestedVersion(kind) {
-      var hosts = _inferRequestedVersionHosts();
-      var host = document.querySelector(".achr-requested-version") || hosts.achr;
-      return _pickRequestedVersionHost(host, kind);
-    }
-
-    function setWeeklyRequestedVersion(weeklyYes) {
-      var hosts = _inferRequestedVersionHosts();
-      var host = document.querySelector(".wc-requested-version") || hosts.wc;
-      return _pickRequestedVersionHost(host, weeklyYes ? "digital" : "do not want");
-    }
-
-    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
     function decodeRateRow(li) {
       if (!li) return null;
       var cls = li.className || "";
       var input = li.querySelector("input[type='radio']");
       if (!input) return null;
 
-      var labelEl =
-        (input.id && (li.closest(".campaign-placeholder,.standard-rates") || document).querySelector("label[for='" + input.id + "']")) ||
-        li.querySelector("label") ||
-        null;
-
+      var labelEl = input.id ? document.querySelector("label[for='" + input.id + "']") : li.querySelector("label");
       var raw = text(labelEl) || text(li);
       var lower = raw.toLowerCase();
 
@@ -1850,9 +1623,9 @@ Updated: 12/17/2025
       if (!kind) return null;
 
       var region = "usa";
-      if (/\bCANprod\b/i.test(cls) || /canprod/.test(lower)) region = "can";
-      else if (/\bINTprod\b/i.test(cls) || /intprod/.test(lower)) region = "int";
-      else if (/\bUSAPROD\b/i.test(cls) || /usaprod/.test(lower)) region = "usa";
+      if (/\bCANprod\b/i.test(cls) || /canada|canprod/.test(lower)) region = "can";
+      else if (/\bINTprod\b/i.test(cls) || /international|intprod/.test(lower)) region = "int";
+      else if (/\bUSAPROD\b/i.test(cls) || /united\s*states|usa|usaprod/.test(lower)) region = "usa";
 
       var period = null;
       if (/\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls)) period = "monthly";
@@ -1947,48 +1720,7 @@ Updated: 12/17/2025
       });
     }
 
-    /* --------- PATCH: Yes/No set with ID-first, TEXT-fallback --------- */
-    function setYesNoByQuestionText(questionIncludes, yesOrNo) {
-      var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
-      var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
-
-      // Find a questionlabel span or p that contains the question; then use the first radio name in that block
-      var candidates = $all(".questionlabel, p, div, span").filter(function (n) {
-        var t = (text(n) || "").toLowerCase().replace(/\s+/g, " ").trim();
-        return t && t.indexOf(qNeed) !== -1;
-      });
-
-      var groupName = null;
-      for (var i = 0; i < candidates.length; i++) {
-        var wrap = candidates[i].closest && candidates[i].closest(".drg-element-type-product, .product-selection, span, p, div");
-        wrap = wrap || candidates[i].parentNode || null;
-        if (!wrap) continue;
-        var anyRadio = wrap.querySelector("input[type='radio']");
-        if (anyRadio && anyRadio.name) { groupName = anyRadio.name; break; }
-      }
-      if (!groupName) return false;
-
-      var group = document.querySelectorAll("input[type='radio'][name='" + groupName.replace(/'/g, "\\'") + "']");
-      if (!group || !group.length) return false;
-
-      var chosen = null;
-      for (var j = 0; j < group.length; j++) {
-        var r = group[j];
-        var lbl = r.id ? document.querySelector("label[for='" + r.id + "']") : (r.closest ? r.closest("label") : null);
-        var t2 = (text(lbl) || "").toLowerCase().replace(/\s+/g, " ").trim();
-        if (t2 === want) { chosen = r; break; }
-      }
-      if (!chosen) return false;
-
-      try { chosen.click(); } catch (e) {}
-      chosen.checked = true;
-      chosen.dispatchEvent(new Event("input", { bubbles: true }));
-      chosen.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    }
-
     function setNewsAndWeekly(newsYes, weeklyYes) {
-      // ID-first (when present)
       var newsYesR = document.getElementById("optid3309_1"), newsNoR = document.getElementById("optid3309_2");
       var wcYesR = document.getElementById("optid3934_1"), wcNoR = document.getElementById("optid3934_2");
 
@@ -1999,23 +1731,11 @@ Updated: 12/17/2025
           tgt.checked = true;
           tgt.dispatchEvent(new Event("input", { bubbles: true }));
           tgt.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
         }
-        return !!tgt;
       }
 
-      var okNews = ensure(newsYes, newsYesR, newsNoR);
-      var okWc = ensure(weeklyYes, wcYesR, wcNoR);
-
-      // Text fallback (NO IDs)
-      if (!okNews) {
-        // just look for "subscription to the achr news"
-        setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
-      }
-      if (!okWc) {
-        // just look for "weekly chill"
-        setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
-      }
+      ensure(newsYes, newsYesR, newsNoR);
+      ensure(weeklyYes, wcYesR, wcNoR);
     }
 
     function attachTileClickSelection() {
@@ -2043,33 +1763,14 @@ Updated: 12/17/2025
         var period = currentPeriod();
         var region = CACHE.region || "usa";
 
-        var weeklyYes = (kind === "chill");
+        var rvKind = (kind === "print") ? "print" : (kind === "chill") ? "none" : "digital";
 
-        // Yes/No product questions
-        if (weeklyYes) setNewsAndWeekly(false, true);
+        if (kind === "chill") setNewsAndWeekly(false, true);
         else setNewsAndWeekly(true, false);
-
-        // Weekly Chill Requested Version:
-        // - Weekly Chill = Digital
-        // - Anything else = Do not want
-        setWeeklyRequestedVersion(weeklyYes);
-
-        // ACHR Requested Version:
-        // - If Weekly Chill selected => Do not want
-        // - Else Print tile => Print
-        // - Else => Digital
-        if (weeklyYes) setAchRequestedVersion("do not want");
-        else if (kind === "print") setAchRequestedVersion("print");
-        else setAchRequestedVersion("digital");
 
         if (kind === "fan") {
           clearAllRateRadios();
-
-          // Fan-only should force ACHR Requested Version to DIGITAL (per requirement),
-          // and Weekly Chill to Do not want.
-          setAchRequestedVersion("digital");
-          setWeeklyRequestedVersion(false);
-
+          selectRequestedVersion("digital");
           CACHE.product = null;
           if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
           return;
@@ -2077,13 +1778,29 @@ Updated: 12/17/2025
 
         var planMap = (kind === "print") ? "print" : (kind === "chill") ? "chill" : "digital";
         selectCampaignRadioAny(planMap, period, region);
+        selectRequestedVersion(rvKind);
+
+        var amount = (card.querySelector(".price .amount") && card.querySelector(".price .amount").textContent) || "$0.00";
+        var per = (card.querySelector(".price .per") && card.querySelector(".price .per").textContent) || "/ yr";
+
+        CACHE.product = {
+          name: title,
+          kind: kind,
+          price: amount,
+          format: kind === "print" ? "Print" : "Digital",
+          term: /mo/.test((per || "").toLowerCase()) ? "Monthly" : "Annual",
+          imageUrl:
+            kind === "print"
+              ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
+              : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png"
+        };
 
         applyPricesNow();
         if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
       }, true);
     }
 
-    /* ---------- FLOW WIZARD (PAYMENT: move ORIGINAL submit into modal bar, centered) ---------- */
+    /* ---------- FLOW WIZARD (UPDATED: MOVE REAL #submitbtn INTO MODAL) ---------- */
     function setupFlowWizard() {
       if (!window.__BNP_FLOW_WIZ_RETRY) window.__BNP_FLOW_WIZ_RETRY = 0;
 
@@ -2131,17 +1848,12 @@ Updated: 12/17/2025
         try { form.submit(); } catch (e) {}
       }
 
-      // Action bar
       var actions = document.createElement("div");
       actions.className = "nl-actions";
       actions.style.cssText =
         "display:flex;gap:12px;padding:12px;margin-top:24px;background:#fff;border-top:1px solid #e6e8ee;align-items:center";
-
-      // Center slot so Pay Now sits centered
       actions.innerHTML =
-        '<button type="button" class="btn btn-back">Back</button>' +
-        '<div class="bnp-action-center" style="flex:1;display:flex;justify-content:center;align-items:center;"></div>' +
-        '<button type="button" class="btn btn-next">Next</button>';
+        '<button type="button" class="btn btn-back">Back</button><div style="flex:1"></div><button type="button" class="btn btn-next">Next</button>';
 
       var backBtn = actions.querySelector(".btn-back");
       var nextBtn = actions.querySelector(".btn-next");
@@ -2169,84 +1881,87 @@ Updated: 12/17/2025
         el.style.border = "none";
         el.style.borderRadius = "5px";
         el.style.textTransform = "uppercase";
-        el.style.marginTop = "0";
-        el.style.display = "inline-block";
+        el.style.marginTop = "20px";
+        el.style.display = "block";
+        el.style.marginLeft = "auto";
+        el.style.marginRight = "auto";
         el.style.fontWeight = "bold";
         el.style.boxShadow = "rgba(0, 0, 0, 0.1) 0px 4px 6px";
         el.style.transition = "background-color 0.3s";
       }
 
-      // Track original submit wrapper location
-      var submitDock = { wrap: null, parent: null, nextSibling: null };
-
-      function findOriginalPaymentSubmitWrapper() {
-        if (!content6) return null;
-        var wrap = content6.querySelector("#submitbtn");
-        if (wrap) return wrap;
-
-        var btn =
-          content6.querySelector('input[type="submit"]') ||
-          content6.querySelector('button[type="submit"]') ||
-          null;
-        if (!btn) return null;
-
-        return btn.closest("div") || btn.parentNode || null;
+      function ensureFormId(form) {
+        if (!form) return null;
+        if (!form.id) form.id = "bnp_form_" + Math.random().toString(36).slice(2);
+        return form.id;
       }
 
-      function ensureSubmitDockCaptured(wrap) {
-        if (!wrap) return;
-        if (submitDock.wrap) return;
-        submitDock.wrap = wrap;
-        submitDock.parent = wrap.parentNode || null;
-        submitDock.nextSibling = wrap.nextSibling || null;
+      function findSubmitWrap() {
+        return (content6 && content6.querySelector("#submitbtn")) || document.getElementById("submitbtn") || null;
       }
 
-      function restorePaymentSubmitToOriginalSpot() {
-        if (!submitDock.wrap || !submitDock.parent) return;
-        if (!document.body.contains(submitDock.parent)) return;
-
-        try {
-          if (submitDock.nextSibling && submitDock.nextSibling.parentNode === submitDock.parent) {
-            submitDock.parent.insertBefore(submitDock.wrap, submitDock.nextSibling);
-          } else {
-            submitDock.parent.appendChild(submitDock.wrap);
-          }
-        } catch (e) {}
-
-        try { submitDock.wrap.style.display = "none"; } catch (e) {}
+      function captureHome(wrap) {
+        if (!wrap || wrap.dataset.__bnpHomeCaptured === "1") return;
+        var ph = document.createElement("span");
+        ph.id = "bnp-submitbtn-home";
+        ph.style.display = "none";
+        wrap.parentNode.insertBefore(ph, wrap);
+        wrap.dataset.__bnpHomeCaptured = "1";
       }
 
       function moveRealSubmitIntoPaymentBar() {
         if (!content6) return;
-        var centerSlot = actions.querySelector(".bnp-action-center");
-        if (!centerSlot) return;
-        if (actions.dataset.__payInstalled === "1") return;
+        if (actions.dataset.__payMoved === "1") return;
 
-        var wrap = findOriginalPaymentSubmitWrapper();
+        var wrap = findSubmitWrap();
         if (!wrap) return;
 
-        ensureSubmitDockCaptured(wrap);
+        captureHome(wrap);
 
-        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"]');
-        if (realBtn) {
-          try { realBtn.value = "Pay Now"; } catch (e) {}
-          stylePayNow(realBtn);
+        var submitEl = wrap.querySelector('input[type="submit"], button[type="submit"]');
+        if (!submitEl) return;
+
+        // Keep DF onclick="return checkPayment();" exactly as-is. Just relabel + style.
+        try { if (submitEl.tagName.toLowerCase() === "input") submitEl.value = "Pay Now"; } catch (e) {}
+        stylePayNow(submitEl);
+
+        // Ensure it submits the correct form even after moving
+        var form =
+          (content6 && (content6.closest && content6.closest("form"))) ||
+          (wrap.closest && wrap.closest("form")) ||
+          document.querySelector("form");
+        var fid = ensureFormId(form);
+        if (fid) {
+          try { submitEl.setAttribute("form", fid); } catch (e) {}
         }
 
+        // Hide wizard Next on payment step
+        try { nextBtn.style.display = "none"; } catch (e) {}
+
+        // Move the entire DF submit wrapper into the action bar
+        actions.appendChild(wrap);
+
+        // Make wrapper sit nicely in the bar
         try {
-          wrap.style.display = "inline-flex";
-          wrap.style.alignItems = "center";
-          wrap.style.justifyContent = "center";
-          wrap.style.margin = "0";
-          wrap.style.padding = "0";
-          wrap.style.width = "auto";
+          wrap.style.marginLeft = "auto";
+          wrap.style.marginTop = "0";
         } catch (e) {}
 
-        centerSlot.innerHTML = "";
-        centerSlot.appendChild(wrap);
+        actions.dataset.__payMoved = "1";
+      }
 
-        try { nextBtn.style.display = "none"; } catch (e) {}
-        actions.dataset.__payInstalled = "1";
+      function restoreRealSubmitHome() {
+        if (!actions.dataset.__payMoved) return;
+
+        var wrap = actions.querySelector("#submitbtn");
+        var home = document.getElementById("bnp-submitbtn-home");
+
+        if (wrap && home && home.parentNode) {
+          home.parentNode.insertBefore(wrap, home);
+        }
+
+        try { nextBtn.style.display = ""; } catch (e) {}
+        actions.dataset.__payMoved = "";
       }
 
       function updateButtons() {
@@ -2256,13 +1971,7 @@ Updated: 12/17/2025
         }
         show(actions);
 
-        if (step !== "content6") {
-          try { nextBtn.style.display = ""; } catch (e) {}
-          actions.dataset.__payInstalled = "";
-          var centerSlot = actions.querySelector(".bnp-action-center");
-          if (centerSlot) centerSlot.innerHTML = "";
-          restorePaymentSubmitToOriginalSpot();
-        }
+        if (step !== "content6") restoreRealSubmitHome();
 
         if (step === "newsletters" || step === "content1") nextBtn.textContent = "Next";
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
@@ -2360,6 +2069,8 @@ Updated: 12/17/2025
         placeActions(content6);
         step = "content6";
         updateButtons();
+
+        // Move the REAL submit into the modal action bar (no proxy)
         moveRealSubmitIntoPaymentBar();
       }
 
@@ -2376,9 +2087,9 @@ Updated: 12/17/2025
         if (content4) hide(content4);
 
         closePaymentModal();
+        restoreRealSubmitHome();
         hide(actions);
 
-        updateButtons();
         step = "plans";
         scrollToHeaderNow();
       }
@@ -2402,6 +2113,7 @@ Updated: 12/17/2025
 
       function backFromPayment() {
         closePaymentModal();
+        restoreRealSubmitHome();
         if (chosenKind === "print" && content4) {
           show(content4);
           placeActions(content4);
@@ -2426,15 +2138,7 @@ Updated: 12/17/2025
         if (step === "newsletters") { goToContent1(); return; }
 
         if (step === "content1") {
-          var v1 = validateStep("content1");
-          if (!v1.ok) {
-            alert("Please complete all required Profile fields.");
-            try {
-              if (v1.focusEl && v1.focusEl.scrollIntoView) v1.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
-              if (v1.focusEl && v1.focusEl.focus) v1.focusEl.focus({ preventScroll: true });
-            } catch (e) {}
-            return;
-          }
+          if (!validateStep("content1")) { alert("Please complete required Profile fields."); return; }
           if (chosenFree) { submitViaNative(content1); return; }
           if (chosenKind === "print") goToContent4();
           else goToPayment();
@@ -2442,21 +2146,14 @@ Updated: 12/17/2025
         }
 
         if (step === "content4") {
-          var v4 = validateStep("content4");
-          if (!v4.ok) {
-            alert("Please complete all required Shipping fields.");
-            try {
-              if (v4.focusEl && v4.focusEl.scrollIntoView) v4.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
-              if (v4.focusEl && v4.focusEl.focus) v4.focusEl.focus({ preventScroll: true });
-            } catch (e) {}
-            return;
-          }
+          if (!validateStep("content4")) { alert("Please complete required Shipping fields."); return; }
           if (chosenFree) submitViaNative(content4);
           else goToPayment();
           return;
         }
 
         if (step === "content6") {
+          // Should be hidden (real submit is moved into bar), but keep fallback
           submitViaNative(content6);
         }
       });
@@ -2514,12 +2211,6 @@ Updated: 12/17/2025
 
       preloadPaymentStep();
       hide(actions);
-
-      // Hide original submit while content6 preloaded/hidden
-      try {
-        var w = findOriginalPaymentSubmitWrapper();
-        if (w) w.style.display = "none";
-      } catch (e) {}
 
       step = "plans";
       updateButtons();
@@ -2640,8 +2331,11 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first)
+     SECTION O — CART FORCE-SYNC (YOUR ORIGINAL SECTION 3)
+     + Cart Summary Sync Add-on
+     (UPDATED: price reads selected radio more reliably)
      ============================================================ */
+
   (function () {
     if (BNP.__CART3__) return;
     BNP.__CART3__ = true;
@@ -2660,82 +2354,123 @@ Updated: 12/17/2025
     }
     var fmt = function (n) { return typeof n === "number" && !isNaN(n) ? "$" + n.toFixed(2) : null; };
 
-    function labelForInput(input) {
-      if (!input) return null;
-      if (input.id) {
-        var l = document.querySelector("label[for='" + input.id + "']");
-        if (l) return l;
-      }
-      var parentLabel = input.closest && input.closest("label");
-      return parentLabel || null;
+    function currentPeriod() {
+      var seg = Q("#billingSeg");
+      var mode = seg && seg.dataset ? seg.dataset.active : null;
+      if (mode === "monthly") return "monthly";
+      if (mode === "annual") return "yearly";
+
+      var sample = (
+        (Q("#chillPer") && Q("#chillPer").textContent) ||
+        (Q("#proPer") && Q("#proPer").textContent) ||
+        (Q("#plusPer") && Q("#plusPer").textContent) ||
+        ""
+      ).toLowerCase();
+
+      return /\bmo\b/.test(sample) ? "monthly" : "yearly";
     }
 
-    function isLikelyProductRadio(input) {
-      if (!input || input.type !== "radio") return false;
-
-      var li = input.closest && input.closest("li");
-      var cls = ((li && li.className) || "") + " " + (input.className || "");
-      if (/\b(Aprod|Dprod|Pprod|USAPROD|CANprod|INTprod|term2|term3|term26)\b/i.test(cls)) return true;
-
-      var lbl = labelForInput(input);
-      var t = (T(lbl) || (li ? T(li) : "") || "").toLowerCase();
-      if (!t) return false;
-
-      if (/\$/.test(t)) return true;
-      if (/\b(annual|year|yr|monthly|month|mo|print|digital|chill)\b/.test(t)) return true;
-
-      return false;
+    function currentRegion() {
+      var t = (Q("#id7 option:checked") && Q("#id7 option:checked").textContent || "").toLowerCase();
+      if (t.includes("united states")) return "usa";
+      if (t.includes("canada")) return "can";
+      return "int";
     }
 
-    function findCheckedProductRadio() {
-      var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key")].filter(Boolean);
-
-      for (var i = 0; i < roots.length; i++) {
-        var checked = Q("input[type='radio']:checked", roots[i]);
-        if (checked && isLikelyProductRadio(checked)) return checked;
+    function currentKind() {
+      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
+      if (selCard) {
+        var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
+        if (/fan only/.test(title)) return "fan";
+        if (/ac\s*pro\s*\+\s*print|print/.test(title)) return "print";
+        if (/chill/.test(title)) return "chill";
+        return "digital";
       }
 
-      var allChecked = QA("input[type='radio']:checked");
-      for (var j = 0; j < allChecked.length; j++) {
-        if (isLikelyProductRadio(allChecked[j])) return allChecked[j];
+      var checked = QA("input[type=radio]:checked");
+      for (var i = 0; i < checked.length; i++) {
+        var r = checked[i];
+        var li = r.closest && r.closest("li");
+        if (!li) continue;
+        var c = li.className || "";
+        if (/\bPprod\b/i.test(c)) return "print";
+        if (/\bAprod\b/i.test(c)) return "chill";
+        if (/\bDprod\b/i.test(c)) return "digital";
       }
-
       return null;
     }
 
-    function decodeSelectedRadio() {
-      var input = findCheckedProductRadio();
+    function decodeRow(li) {
+      var cls = li.className || "";
+      var input = li.querySelector("input[type='radio']");
       if (!input) return null;
 
-      var li = input.closest && input.closest("li");
-      var labelEl = labelForInput(input) || (li ? Q("label", li) : null);
-      var raw = T(labelEl) || (li ? T(li) : "") || "";
-      var priceNum = _moneyFromString(raw);
+      var kind =
+        /\bAprod\b/i.test(cls) ? "chill" :
+        /\bDprod\b/i.test(cls) ? "digital" :
+        /\bPprod\b/i.test(cls) ? "print" :
+        null;
+      if (!kind) return null;
 
-      var cls = ((li && li.className) || "") + " " + (input.className || "");
-      var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
-      var per = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
+      var lab = input.id ? Q("label[for='" + input.id + "']") : null;
+      var raw = T(lab) || T(li);
+      var lower = (raw || "").toLowerCase();
 
-      if (!kind) {
-        var low = raw.toLowerCase();
-        if (/print/.test(low)) kind = "print";
-        else if (/chill/.test(low)) kind = "chill";
-        else if (/digital/.test(low)) kind = "digital";
-      }
-      if (!per) {
-        var low2 = raw.toLowerCase();
-        if (/month|monthly|\bmo\b/.test(low2)) per = "monthly";
-        else if (/year|annual|\byr\b/.test(low2)) per = "yearly";
-      }
+      // UPDATED: handle term3 + fallback parse from label text
+      var per =
+        (/\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls)) ? "monthly" :
+        /\bterm26\b/i.test(cls) ? "yearly" :
+        (/month|monthly|\bmo\b/.test(lower)) ? "monthly" :
+        (/year|annual|\byr\b/.test(lower)) ? "yearly" :
+        null;
 
-      return {
-        input: input,
-        li: li,
-        rawLabel: raw,
-        kind: kind,
-        per: per,
-        price: (typeof priceNum === "number" && !isNaN(priceNum)) ? fmt(priceNum) : null
+      // UPDATED: region inference can fallback from label text
+      var region =
+        /\bCANprod\b/i.test(cls) ? "can" :
+        /\bINTprod\b/i.test(cls) ? "int" :
+        /\bUSAPROD\b/i.test(cls) ? "usa" :
+        (/canada/.test(lower)) ? "can" :
+        (/international/.test(lower)) ? "int" :
+        "usa";
+
+      var price = _moneyFromString(raw);
+
+      return { kind: kind, per: per, region: region, input: input, price: price, raw: raw };
+    }
+
+    function selectedPriceMap() {
+      var map = {
+        chill: { monthly: null, yearly: null },
+        digital: { monthly: null, yearly: null },
+        print: { usa: { monthly: null, yearly: null }, can: { monthly: null, yearly: null }, int: { monthly: null, yearly: null } }
       };
+
+      var roots = [];
+      [".campaign-placeholder", ".standard-rates", ".promo-key"].forEach(function (s) {
+        var n = Q(s);
+        if (n) roots.push(n);
+      });
+      if (!roots.length) roots.push(document.body);
+
+      var fallbackPer = currentPeriod();
+
+      roots.forEach(function (root) {
+        QA("li", root).forEach(function (li) {
+          var row = decodeRow(li);
+          if (!row) return;
+          if (!row.input.checked) return;
+          if (row.price == null) return;
+
+          // UPDATED: if DF doesn’t mark term class, use currentPeriod()
+          var per = row.per || fallbackPer;
+
+          if (row.kind === "print") map.print[row.region][per] = fmt(row.price);
+          else if (row.kind === "digital") map.digital[per] = fmt(row.price);
+          else if (row.kind === "chill") map.chill[per] = fmt(row.price);
+        });
+      });
+
+      return map;
     }
 
     function tilePriceFallback(kind) {
@@ -2754,55 +2489,43 @@ Updated: 12/17/2025
       return null;
     }
 
-    function currentKindFromTile() {
-      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
-      if (selCard) {
-        var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
-        if (/fan only/.test(title)) return "fan";
-        if (/ac\s*pro\s*\+\s*print|print/.test(title)) return "print";
-        if (/chill/.test(title)) return "chill";
-        return "digital";
-      }
-      return null;
-    }
-
     var CART = { kind: null, price: null, term: null, format: null, img: null };
 
     function computeCartSnapshot() {
-      var radio = decodeSelectedRadio();
+      var kind = currentKind();
+      var period = currentPeriod();
+      var region = currentRegion();
 
-      if (radio && radio.kind) {
-        var term = (radio.per === "monthly") ? "Monthly" : "Annual";
-        var format = radio.kind === "print" ? "Print" : "Digital";
-        var img =
-          radio.kind === "print"
-            ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
-            : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png";
+      if (!kind || kind === "fan") return { kind: kind, price: null, term: null, format: null, img: null };
 
-        var price = radio.price || tilePriceFallback(radio.kind);
-        return { kind: radio.kind, price: price, term: term, format: format, img: img };
+      var m = selectedPriceMap();
+      var price = null;
+
+      if (kind === "chill") price = m.chill[period];
+      if (kind === "digital") price = m.digital[period];
+      if (kind === "print") {
+        price =
+          (m.print[region] && m.print[region][period]) ||
+          m.print.usa[period] ||
+          m.print.can[period] ||
+          m.print.int[period];
       }
 
-      var kind = currentKindFromTile();
-      if (!kind) return { kind: null, price: null, term: null, format: null, img: null };
-      if (kind === "fan") return { kind: "fan", price: null, term: null, format: null, img: null };
+      if (!price) price = tilePriceFallback(kind);
 
-      var price2 = tilePriceFallback(kind);
-      var term2 = "Annual";
-      var format2 = kind === "print" ? "Print" : "Digital";
-      var img2 =
+      var term = period === "monthly" ? "Monthly" : "Annual";
+      var format = kind === "print" ? "Print" : "Digital";
+      var img =
         kind === "print"
           ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
           : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png";
 
-      return { kind: kind, price: price2, term: term2, format: format2, img: img2 };
+      return { kind: kind, price: price, term: term, format: format, img: img };
     }
 
     function renderCart(snapshot) {
       var items = QA(".cartItems");
       var totals = QA(".cartTotal");
-
-      if (!items.length && !totals.length) return;
 
       items.forEach(function (el) { el.innerHTML = ""; });
 
@@ -2811,7 +2534,7 @@ Updated: 12/17/2025
       if (snapshot.kind && snapshot.kind !== "fan" && snapshot.price) {
         var div = document.createElement("div");
         div.innerHTML =
-          '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;float:left;" />' +
+          '<img src="' + snapshot.img + '" style="width:60px;height:60px;margin-right:10px;border-radius:4px;" />' +
           '<p style="margin:0;font-size:14px;color:#555;">Price: ' + snapshot.price +
           "<br>" + snapshot.term + ", " + snapshot.format + " Subscription</p>";
 
@@ -2957,6 +2680,133 @@ Updated: 12/17/2025
     }
 
     onReady(init);
+  })();
+
+  /* ---- CART SUMMARY SYNC ADD-ON (unchanged) ---- */
+  (function () {
+    if (BNP.__CART_SUMMARY_ADDON__) return;
+    BNP.__CART_SUMMARY_ADDON__ = true;
+
+    window.__BNP_CART__ = window.__BNP_CART__ || { sync: function () {}, debug: false };
+
+    function findCheckedProductRadio() {
+      var roots = [$(".campaign-placeholder"), $(".standard-rates"), document].filter(Boolean);
+      for (var i = 0; i < roots.length; i++) {
+        var r = roots[i];
+        var checked = $("input[type='radio']:checked", r);
+        if (checked) return checked;
+      }
+      return null;
+    }
+
+    function labelForInput(input) {
+      if (!input) return null;
+      if (input.id) {
+        var l = document.querySelector("label[for='" + input.id + "']");
+        if (l) return l;
+      }
+      var parentLabel = input.closest && input.closest("label");
+      return parentLabel || null;
+    }
+
+    function decodeSelectedProduct() {
+      var input = findCheckedProductRadio();
+      if (!input) return null;
+
+      var li = input.closest && input.closest("li");
+      var labelEl = labelForInput(input) || (li ? $("label", li) : null);
+      var raw = text(labelEl) || (li ? text(li) : "") || "";
+      var price = moneyFromString(raw);
+
+      var cls = ((li && li.className) || "") + " " + (input.className || "");
+      var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
+      var period = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
+      var region = /\bCANprod\b/i.test(cls) ? "can" : /\bINTprod\b/i.test(cls) ? "int" : "usa";
+
+      return { id: input.id || "", value: input.value || "", rawLabel: raw, price: price, kind: kind, period: period, region: region };
+    }
+
+    function ensureCartSummaryEl() {
+      var host = $("#content6") || $(".promo-key") || $("section.plans") || document.body;
+      var el = $("#bnp-cart-summary");
+      if (el) return el;
+
+      el = document.createElement("div");
+      el.id = "bnp-cart-summary";
+      el.style.cssText =
+        "margin:12px 0;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.06);font-size:13px;line-height:1.35;";
+      el.innerHTML =
+        "<div style='font-weight:800;margin-bottom:4px;'>Cart</div>" +
+        "<div class='bnp-cart-line'>No selection yet.</div>";
+
+      if (host && host.firstChild) host.insertBefore(el, host.firstChild);
+      else if (host) host.appendChild(el);
+
+      return el;
+    }
+
+    var _lastSig = "";
+    function signature(sel) {
+      if (!sel) return "none";
+      var promo = ($("#id49") && $("#id49").value) ? ($("#id49").value || "").trim() : "";
+      var country = ($("#id7") && $("#id7").value) ? ($("#id7").value || "").trim() : "";
+      var billing = ($("#billingSeg") && $("#billingSeg").dataset) ? ($("#billingSeg").dataset.active || "") : "";
+      return [sel.id, sel.value, promo, country, billing].join("|");
+    }
+
+    var doSync = debounce(function (opts) {
+      try {
+        var sel = decodeSelectedProduct();
+        var sig = signature(sel);
+        if (!(opts && opts.force) && sig === _lastSig) return;
+        _lastSig = sig;
+
+        var summary = ensureCartSummaryEl();
+        var line = summary.querySelector(".bnp-cart-line");
+
+        if (!sel) {
+          if (line) line.textContent = "No selection yet.";
+        } else {
+          var nice =
+            (sel.kind ? sel.kind.toUpperCase() : "PRODUCT") +
+            (sel.period ? " | " + sel.period : "") +
+            (sel.region ? " | " + sel.region.toUpperCase() : "");
+
+          var p = (typeof sel.price === "number" && !isNaN(sel.price)) ? (" | $" + sel.price.toFixed(2)) : "";
+          if (line) line.textContent = nice + p;
+        }
+      } catch (e) {
+        console.warn("[BNP CART SUMMARY] sync error:", e);
+      }
+    }, 140);
+
+    window.__BNP_CART__.sync = function (opts) { doSync(opts || {}); };
+
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (!t) return;
+
+      if (t.matches && t.matches("input[type='radio']")) window.__BNP_CART__.sync();
+      if (t.id === "id49") window.__BNP_CART__.sync();
+      if (t.id === "id7") window.__BNP_CART__.sync();
+    }, true);
+
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t) return;
+
+      if (t.closest && t.closest("#monthlyBtn, #annualBtn, [data-billing='monthly'], [data-billing='yearly']")) {
+        setTimeout(function () { window.__BNP_CART__.sync(); }, 120);
+      }
+      if (t.closest && t.closest("section.plans article.card, section.plans article")) {
+        setTimeout(function () { window.__BNP_CART__.sync(); }, 120);
+      }
+      if (t.id === "promo-code-save" || t.id === "promo-code-clear") {
+        setTimeout(function () { window.__BNP_CART__.sync(); }, 200);
+      }
+    }, true);
+
+    onReady(function () { window.__BNP_CART__.sync({ force: true }); });
   })();
 
   /* ============================================================
