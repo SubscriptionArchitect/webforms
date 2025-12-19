@@ -1,17 +1,110 @@
+```javascript
+(function () {
+  "use strict";
 
-<!-- =====================================================================================
-NEWS PRO SITE MASTER SCRIPT (TILES VISIBILITY FAILSAFE + PAYMENT-SAFE SUBMIT)
-Brandon Decker | UX LAB
-Updated: 12/18/2025
-===================================================================================== -->
+  if (window.__BNP_TILE_KEEPALIVE__) return;
+  window.__BNP_TILE_KEEPALIVE__ = true;
+
+  function onReady(fn) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
+    else fn();
+  }
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+  function forceVisible(el, preferredDisplay) {
+    if (!el) return false;
+
+    try { el.hidden = false; } catch (e) {}
+    try { el.removeAttribute("hidden"); } catch (e) {}
+    try { el.removeAttribute("aria-hidden"); } catch (e) {}
+
+    var cs = getComputedStyle(el);
+    var changed = false;
+
+    if (cs.display === "none") {
+      el.style.setProperty("display", preferredDisplay || "block", "important");
+      changed = true;
+    }
+    if (cs.visibility === "hidden") {
+      el.style.setProperty("visibility", "visible", "important");
+      changed = true;
+    }
+    if (cs.opacity === "0") {
+      el.style.setProperty("opacity", "1", "important");
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  function findPlansContainer() {
+    return (
+      $("section.plans") ||
+      $(".plans") ||
+      $("section[aria-label='Plans']") ||
+      $("section[aria-label*='Plan']") ||
+      $("[data-section='plans']") ||
+      $("[data-plans]") ||
+      null
+    );
+  }
+
+  function findPlanCards(plans) {
+    if (!plans) return [];
+    var cards = $all(".card", plans);
+    if (cards.length) return cards;
+    cards = $all("article", plans);
+    if (cards.length) return cards;
+    return [];
+  }
+
+  function reviveTiles() {
+    var plans = findPlansContainer();
+    if (!plans) return;
+
+    forceVisible(plans, "block");
+
+    var p = plans.parentElement;
+    for (var i = 0; i < 3 && p && p !== document.body; i++) {
+      forceVisible(p, "");
+      p = p.parentElement;
+    }
+
+    var cards = findPlanCards(plans);
+    cards.forEach(function (c) {
+      if (c.getAttribute("data-keepalive") === "off") return;
+      forceVisible(c, "block");
+    });
+  }
+
+  function start() {
+    reviveTiles();
+    var ticks = 0;
+    var iv = setInterval(function () {
+      reviveTiles();
+      ticks++;
+      if (ticks >= 25) clearInterval(iv);
+    }, 200);
+
+    if (window.MutationObserver) {
+      var mo = new MutationObserver(function () { reviveTiles(); });
+      mo.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["style", "class", "hidden", "aria-hidden"]
+      });
+    }
+  }
+
+  onReady(start);
+})();
 
 
 (function () {
   "use strict";
 
-  /* ============================================================
-     BNP GLOBAL NAMESPACE + SMALL UTILS
-     ============================================================ */
   if (!window.__BNP_MASTER__) window.__BNP_MASTER__ = {};
   var BNP = window.__BNP_MASTER__;
 
@@ -86,9 +179,18 @@ Updated: 12/18/2025
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   }
 
-  /* ============================================================
-     DEFENSIVE: HARD-KILL #bnp-cart-summary IF IT EVER APPEARS
-     ============================================================ */
+  function getPlansContainer() {
+    return (
+      document.querySelector("section.plans") ||
+      document.querySelector(".plans") ||
+      document.querySelector("section[aria-label='Plans']") ||
+      document.querySelector("section[aria-label*='Plan']") ||
+      document.querySelector("[data-section='plans']") ||
+      document.querySelector("[data-plans]") ||
+      null
+    );
+  }
+
   (function () {
     if (BNP.__KILL_BNP_CART_SUMMARY__) return;
     BNP.__KILL_BNP_CART_SUMMARY__ = true;
@@ -106,9 +208,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
     BNP.__SAFE_SUBMIT_GUARD__ = true;
@@ -156,17 +255,14 @@ Updated: 12/18/2025
     };
   })();
 
-  /* ============================================================
-     SECTION B — ZIP / CITY / STATE FAIL-SAFE (PATCHED: DO NOT HIDE REQUIRED FIELDS)
-     ============================================================ */
   (function () {
     if (BNP.__ZIP_HELPER__) return;
     BNP.__ZIP_HELPER__ = true;
 
     onReady(function () {
-      var zipInput = document.getElementById("id9");  // Zip/Postal
-      var cityInput = document.getElementById("id6"); // City
-      var stateSelect = document.getElementById("id8"); // State/Province
+      var zipInput = document.getElementById("id9");
+      var cityInput = document.getElementById("id6");
+      var stateSelect = document.getElementById("id8");
 
       if (!zipInput || !cityInput || !stateSelect) return;
 
@@ -255,9 +351,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION C — HIDDEN CONTENT VISIBILITY GUARD + MAC SAFE HOTKEY (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__HIDDEN_GUARD__) return;
     BNP.__HIDDEN_GUARD__ = true;
@@ -291,9 +384,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION D — FAQ ACCORDION (SINGLE-OPEN) (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__FAQ_ACCORDION__) return;
     BNP.__FAQ_ACCORDION__ = true;
@@ -322,9 +412,6 @@ Updated: 12/18/2025
     }
   })();
 
-  /* ============================================================
-     SECTION E — ICON INJECTION (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__ICON_INJECT__) return;
     BNP.__ICON_INJECT__ = true;
@@ -346,7 +433,10 @@ Updated: 12/18/2025
     function setText(el, t) { if (el) el.textContent = t; }
 
     function run() {
-      var cards = document.querySelectorAll(".plans .card");
+      var plansContainer = getPlansContainer();
+      if (!plansContainer) return;
+
+      var cards = plansContainer.querySelectorAll(".card");
       if (cards.length < 4) return;
 
       var e0 = cards[0].querySelector(".eyebrow");
@@ -361,7 +451,7 @@ Updated: 12/18/2025
       var e3 = cards[3].querySelector(".eyebrow");
       if (e3) { setText(e3, "Best value with print "); var i3 = document.createElement("span"); inject(i3, ICONS.newspaper, "svg-eyebrow"); e3.appendChild(i3); }
 
-      var btnArrows = document.querySelectorAll(".plans .card .btn .arrow");
+      var btnArrows = plansContainer.querySelectorAll(".card .btn .arrow");
       btnArrows.forEach(function (el) {
         inject(el, ICONS.arrowRight);
         el.style.width = "clamp(1.2em, 1em + 0.7vw, 1.9em)";
@@ -376,14 +466,11 @@ Updated: 12/18/2025
     }
   })();
 
-  /* ============================================================
-     SECTION F — TILE ALIGNMENT (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__TILE_ALIGN__) return;
     BNP.__TILE_ALIGN__ = true;
 
-    var S = { cards: ".plans .card", h2: "h2", sub: ".sub", price: ".price", features: ".features" };
+    var S = { cards: ".card", h2: "h2", sub: ".sub", price: ".price", features: ".features" };
 
     function clearMinHeights(cards) {
       [S.h2, S.sub, S.price, S.features].forEach(function (sel) {
@@ -401,7 +488,10 @@ Updated: 12/18/2025
     }
 
     function alignTiles() {
-      var cards = $all(S.cards);
+      var plansContainer = getPlansContainer();
+      if (!plansContainer) return;
+
+      var cards = Array.from(plansContainer.querySelectorAll(S.cards));
       if (!cards.length) return;
 
       clearMinHeights(cards);
@@ -430,7 +520,10 @@ Updated: 12/18/2025
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(scheduleAlign);
       function hook() {
-        $all(S.cards).forEach(function (card) {
+        var plansContainer = getPlansContainer();
+        if (!plansContainer) return;
+
+        Array.from(plansContainer.querySelectorAll(S.cards)).forEach(function (card) {
           [S.price, S.features].forEach(function (sel) {
             var el = card.querySelector(sel);
             if (el) ro.observe(el);
@@ -454,9 +547,6 @@ Updated: 12/18/2025
     }
   })();
 
-  /* ============================================================
-     SECTION G — NEWSLETTER SYNC (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__NL_SYNC__) return;
     BNP.__NL_SYNC__ = true;
@@ -623,9 +713,6 @@ Updated: 12/18/2025
     }
   })();
 
-  /* ============================================================
-     SECTION H — FIX ACTION BAR BUTTON ALIGNMENT & SIZE (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__ACTION_BAR_FIX__) return;
     BNP.__ACTION_BAR_FIX__ = true;
@@ -661,9 +748,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION I — WIZARD VISIBILITY GUARD (PAYMENT-SAFE) (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__WIZ_VIS_GUARD__) return;
     BNP.__WIZ_VIS_GUARD__ = true;
@@ -679,9 +763,11 @@ Updated: 12/18/2025
     }
 
     onReady(function () {
-      var plans = document.querySelector('section.plans[aria-label="Plans"]');
-      var compare = document.querySelector('section.compare[aria-label="Compare features"]');
-      var newsletters = document.querySelector('section[aria-label="Newsletters"]');
+      var plans = getPlansContainer();
+      var compare =
+        document.querySelector("section.compare[aria-label='Compare features'], section.compare, .compare") ||
+        null;
+      var newsletters = document.querySelector("section[aria-label='Newsletters'], .newsletters") || null;
       var content1 = document.getElementById("content1");
       var content4 = document.getElementById("content4");
       var content6 = document.getElementById("content6");
@@ -739,9 +825,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION J — MOBILE NL CARD PATCH (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__MOBILE_NL_PATCH__) return;
     BNP.__MOBILE_NL_PATCH__ = true;
@@ -921,9 +1004,6 @@ Updated: 12/18/2025
     onReady(init);
   })();
 
-  /* ============================================================
-     SECTION K — COMPACT CHECKBOXES (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__COMPACT_CHECKBOXES__) return;
     BNP.__COMPACT_CHECKBOXES__ = true;
@@ -1024,15 +1104,12 @@ Updated: 12/18/2025
     setInterval(function () { run(); }, 1200);
   })();
 
-  /* ============================================================
-     SECTION L — HERO BACKGROUND (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__HERO_BG__) return;
     BNP.__HERO_BG__ = true;
 
     onReady(function () {
-      var plans = document.querySelector("section.plans");
+      var plans = getPlansContainer();
       if (!plans) return;
 
       var bg = document.createElement("div");
@@ -1093,10 +1170,6 @@ Updated: 12/18/2025
     });
   })();
 
-  /* ============================================================
-     SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
-     (TILES VISIBILITY FAILSAFE ADDED)
-     ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
     BNP.__ORCH1__ = true;
@@ -1123,26 +1196,10 @@ Updated: 12/18/2025
         return;
       }
 
-      if (el.matches("section.plans, section.compare, section.hero")) {
-        el.style.removeProperty("display");
-        el.style.removeProperty("visibility");
-        el.style.removeProperty("opacity");
-        return;
-      }
-
-      if (
-        el.matches("#content1, #content4, #content6, section[aria-label='Newsletters']") ||
-        /^content(1|4|6)$/.test(el.id || "")
-      ) {
-        el.style.display = "block";
-        el.style.removeProperty("visibility");
-        el.style.removeProperty("opacity");
-        return;
-      }
-
       el.style.removeProperty("display");
       el.style.removeProperty("visibility");
       el.style.removeProperty("opacity");
+
       if (getComputedStyle(el).display === "none") el.style.display = "block";
     }
 
@@ -1335,8 +1392,10 @@ Updated: 12/18/2025
     function applyRatesToTiles(rates) {
       var period = currentPeriod();
       var region = CACHE.region || "usa";
+      var plansContainer = getPlansContainer();
+      if (!plansContainer) return;
 
-      $all("section.plans .card, section.plans article").forEach(function (tile) {
+      $all(".card, article", plansContainer).forEach(function (tile) {
         var amountEl = tile.querySelector(".price .amount");
         var perEl = tile.querySelector(".price .per");
         if (!amountEl || !perEl) return;
@@ -1504,16 +1563,17 @@ Updated: 12/18/2025
           });
         }, { threshold: 0.08 });
 
-        $all(".card.reveal, .card").forEach(function (el) { obs.observe(el); });
+        var plansContainer = getPlansContainer();
+        if (plansContainer) $all(".card.reveal, .card", plansContainer).forEach(function (el) { obs.observe(el); });
       } else {
-        $all(".card").forEach(function (el) { el.classList.add("in"); });
+        var plansContainer2 = getPlansContainer();
+        if (plansContainer2) $all(".card", plansContainer2).forEach(function (el) { el.classList.add("in"); });
       }
 
       var y = document.getElementById("year");
       if (y) y.textContent = new Date().getFullYear();
     }
 
-    /* ---------- Requested Version (ACHR vs Weekly Chill) ---------- */
     var __RV_HOSTS_CACHE = null;
 
     function _normRVLabel(s) {
@@ -1625,7 +1685,6 @@ Updated: 12/18/2025
       return _pickRequestedVersionHost(host, weeklyYes ? "digital" : "do not want");
     }
 
-    /* ---------- TILE CLICK selection -> radios/requested version/cart ---------- */
     function decodeRateRow(li) {
       if (!li) return null;
       var cls = li.className || "";
@@ -1749,7 +1808,6 @@ Updated: 12/18/2025
       });
     }
 
-    /* --------- Yes/No set with ID-first, TEXT-fallback --------- */
     function setYesNoByQuestionText(questionIncludes, yesOrNo) {
       var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
       var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -1812,21 +1870,21 @@ Updated: 12/18/2025
     }
 
     function attachTileClickSelection() {
-      var root = $("section.plans");
+      var root = getPlansContainer();
       if (!root) return;
       if (root.dataset.__tileClickBound === "1") return;
       root.dataset.__tileClickBound = "1";
 
       root.addEventListener("click", function (ev) {
-        var card = ev.target && ev.target.closest && ev.target.closest("article.card, article");
+        var card = ev.target && ev.target.closest && ev.target.closest("article.card, article, .card");
         if (!card) return;
 
         try {
-          $all("section.plans article.card.selected, section.plans article.selected").forEach(function (n) { n.classList.remove("selected"); });
+          $all(".card.selected, article.selected", root).forEach(function (n) { n.classList.remove("selected"); });
           card.classList.add("selected");
         } catch (e) {}
 
-        var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
+        var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || text(card) || "").toLowerCase();
         var kind =
           /fan only/i.test(title) ? "fan" :
           /ac\s*pro\s*\+\s*print|print/i.test(title) ? "print" :
@@ -1867,15 +1925,14 @@ Updated: 12/18/2025
       }, true);
     }
 
-    /* ---------- FLOW WIZARD (PAYMENT: move ORIGINAL submit into modal bar, centered) ---------- */
     function setupFlowWizard() {
       if (!window.__BNP_FLOW_WIZ_RETRY) window.__BNP_FLOW_WIZ_RETRY = 0;
 
-      var hero = $("section.hero");
-      var plans = $("section.plans[aria-label='Plans'], section.plans");
-      var compare = $("section.compare[aria-label='Compare features'], section.compare");
-      var newsletters = $("section[aria-label='Newsletters']");
-      var faq = $(".faq-section");
+      var hero = document.querySelector("section.hero, .hero") || null;
+      var plans = getPlansContainer();
+      var compare = document.querySelector("section.compare[aria-label='Compare features'], section.compare, .compare") || null;
+      var newsletters = document.querySelector("section[aria-label='Newsletters'], .newsletters") || null;
+      var faq = document.querySelector(".faq-section, section.faq-section") || null;
       var content1 = document.getElementById("content1");
       var content4 = document.getElementById("content4");
       var content6 = document.getElementById("content6");
@@ -1892,7 +1949,6 @@ Updated: 12/18/2025
       }
 
       function forceShowPlansHard() {
-        // Only enforce when we're actually on plans step (i.e., no wizard step visible)
         var anyStepOpen =
           (newsletters && isVisible(newsletters)) ||
           (content1 && isVisible(content1)) ||
@@ -1912,6 +1968,8 @@ Updated: 12/18/2025
             plans.style.removeProperty("display");
             plans.style.removeProperty("visibility");
             plans.style.removeProperty("opacity");
+            plans.hidden = false;
+            plans.removeAttribute("hidden");
             if (getComputedStyle(plans).display === "none") plans.style.setProperty("display", "block", "important");
           }
           if (compare) {
@@ -1936,7 +1994,6 @@ Updated: 12/18/2025
             promoToggle.style.removeProperty("opacity");
           }
 
-          // make sure modal classes aren't accidentally stuck
           document.documentElement.classList.remove("payment-open");
           document.body.classList.remove("payment-open");
           if (backdrop) backdrop.style.display = "none";
@@ -1971,7 +2028,6 @@ Updated: 12/18/2025
         try { form.submit(); } catch (e) {}
       }
 
-      // Action bar
       var actions = document.createElement("div");
       actions.className = "nl-actions";
       actions.style.cssText =
@@ -2015,7 +2071,6 @@ Updated: 12/18/2025
         el.style.transition = "background-color 0.3s";
       }
 
-      // Track original submit wrapper location
       var submitDock = { wrap: null, parent: null, nextSibling: null };
 
       function findOriginalPaymentSubmitWrapper() {
@@ -2068,7 +2123,6 @@ Updated: 12/18/2025
 
         var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"], button:not([type])');
         if (realBtn) {
-          // Force plain submit, no JS hijack
           try { realBtn.removeAttribute("onclick"); } catch (e) {}
           try { realBtn.onclick = null; } catch (e) {}
           if (realBtn.tagName === "BUTTON") {
@@ -2168,12 +2222,12 @@ Updated: 12/18/2025
       function goToNewsletters(kind) {
         chosenKind = kind;
 
-        hide(hero);
+        if (hero) hide(hero);
         hide(plans);
-        hide(compare);
-        hide(faq);
-        hide(promoBar);
-        hide(promoToggle);
+        if (compare) hide(compare);
+        if (faq) hide(faq);
+        if (promoBar) hide(promoBar);
+        if (promoToggle) hide(promoToggle);
 
         if (newsletters) {
           show(newsletters);
@@ -2215,12 +2269,12 @@ Updated: 12/18/2025
       }
 
       function backToPlans() {
-        show(hero);
+        if (hero) show(hero);
         show(plans);
-        show(compare);
-        show(faq);
-        show(promoBar);
-        show(promoToggle);
+        if (compare) show(compare);
+        if (faq) show(faq);
+        if (promoBar) show(promoBar);
+        if (promoToggle) show(promoToggle);
 
         if (newsletters) hide(newsletters);
         hide(content1);
@@ -2316,17 +2370,16 @@ Updated: 12/18/2025
         }, true);
       })();
 
-      $all("section.plans article.card, section.plans article").forEach(function (card) {
+      var planCards = $all(".card, article", plans);
+      planCards.forEach(function (card) {
         if (card.dataset.__flowTileBound === "1") return;
         card.dataset.__flowTileBound = "1";
 
         card.addEventListener("click", function () {
-          $all("section.plans article.card.selected, section.plans article.selected").forEach(function (n) {
-            n.classList.remove("selected");
-          });
+          $all(".card.selected, article.selected", plans).forEach(function (n) { n.classList.remove("selected"); });
           card.classList.add("selected");
 
-          var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
+          var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || text(card) || "").toLowerCase();
           chosenFree = /free/.test(title);
 
           if (/ac\s*pro\s*\+\s*print|print/.test(title)) goToNewsletters("print");
@@ -2335,13 +2388,12 @@ Updated: 12/18/2025
         }, true);
       });
 
-      // Initial: show plans step explicitly + fail-safe reassertion
-      show(hero);
+      if (hero) show(hero);
       show(plans);
-      show(compare);
-      show(faq);
-      show(promoBar);
-      show(promoToggle);
+      if (compare) show(compare);
+      if (faq) show(faq);
+      if (promoBar) show(promoBar);
+      if (promoToggle) show(promoToggle);
 
       if (newsletters) hide(newsletters);
       hide(content1);
@@ -2355,21 +2407,20 @@ Updated: 12/18/2025
         if (w) w.style.display = "none";
       } catch (e) {}
 
-      // Final safety: if any legacy markup references checkPayment, keep it harmless
       if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
 
       step = "plans";
       updateButtons();
 
-      // Failsafe: if ANYTHING hides the tiles, bring plans back when no wizard step is open.
       forceShowPlansHard();
       setTimeout(forceShowPlansHard, 0);
       setTimeout(forceShowPlansHard, 120);
       setTimeout(forceShowPlansHard, 300);
+      setTimeout(forceShowPlansHard, 700);
 
       if (window.MutationObserver) {
         var mo = new MutationObserver(debounce(forceShowPlansHard, 80));
-        mo.observe(document.documentElement, { attributes: true, subtree: true, childList: true, attributeFilter: ["style", "class"] });
+        mo.observe(document.documentElement, { attributes: true, subtree: true, childList: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"] });
       }
     }
 
@@ -2396,9 +2447,6 @@ Updated: 12/18/2025
     onReady(initAll);
   })();
 
-  /* ============================================================
-     SECTION N — GEO IP LOCATOR (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__GEO2__) return;
     BNP.__GEO2__ = true;
@@ -2487,9 +2535,6 @@ Updated: 12/18/2025
     onReady(run);
   })();
 
-  /* ============================================================
-     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first) (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
     BNP.__CART3__ = true;
@@ -2587,7 +2632,8 @@ Updated: 12/18/2025
     }
 
     function tilePriceFallback(kind) {
-      var cards = QA("section.plans .card, section.plans article");
+      var plans = getPlansContainer();
+      var cards = plans ? QA(".card, article", plans) : QA(".plans .card, section.plans .card, section.plans article");
       for (var i = 0; i < cards.length; i++) {
         var card = cards[i];
         var title = ((card.querySelector("h2,h3,h4") && card.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
@@ -2603,7 +2649,8 @@ Updated: 12/18/2025
     }
 
     function currentKindFromTile() {
-      var selCard = Q("section.plans .card.selected, section.plans article.selected") || null;
+      var plans = getPlansContainer();
+      var selCard = plans ? Q(".card.selected, article.selected", plans) : Q("section.plans .card.selected, section.plans article.selected");
       if (selCard) {
         var title = ((selCard.querySelector("h2,h3,h4") && selCard.querySelector("h2,h3,h4").textContent) || "").toLowerCase();
         if (/fan only/.test(title)) return "fan";
@@ -2652,7 +2699,6 @@ Updated: 12/18/2025
 
       if (!items.length && !totals.length) return;
 
-      // hard reset so we never duplicate
       items.forEach(function (el) { el.innerHTML = ""; });
 
       var total = 0;
@@ -2731,13 +2777,13 @@ Updated: 12/18/2025
       var country = Q("#id7");
       if (country) country.addEventListener("change", burstSync, { passive: true });
 
-      var plans = Q("section.plans");
+      var plans = getPlansContainer();
       if (plans) {
         plans.addEventListener("click", function (e) {
           var card = e.target.closest && e.target.closest(".card, article");
           if (!card) return;
 
-          QA("section.plans .card.selected, section.plans article.selected").forEach(function (n) { n.classList.remove("selected"); });
+          QA(".card.selected, article.selected", plans).forEach(function (n) { n.classList.remove("selected"); });
           card.classList.add("selected");
           burstSync();
         }, true);
@@ -2808,9 +2854,6 @@ Updated: 12/18/2025
     onReady(init);
   })();
 
-  /* ============================================================
-     SECTION P — ACHR CHILL MONTHLY HIDE PATCH (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__CHILL_HIDE__) return;
     BNP.__CHILL_HIDE__ = true;
@@ -2833,7 +2876,9 @@ Updated: 12/18/2025
 
     function updateChillVisibility() {
       var period = getPeriod();
-      document.querySelectorAll("section.plans .card, section.plans article").forEach(function (card) {
+      var plans = getPlansContainer();
+
+      (plans ? $all(".card, article", plans) : Array.from(document.querySelectorAll("section.plans .card, section.plans article"))).forEach(function (card) {
         if (!isChillCard(card)) return;
         if (period === "monthly") card.style.display = "none";
         else card.style.removeProperty("display");
@@ -2867,9 +2912,6 @@ Updated: 12/18/2025
     onReady(init);
   })();
 
-  /* ============================================================
-     SECTION Q — CAMPAIGN QUOTED TEXT -> TILE FINE PRINT (ORIGINAL)
-     ============================================================ */
   (function () {
     if (BNP.__FINE_PRINT__) return;
     BNP.__FINE_PRINT__ = true;
@@ -2978,8 +3020,8 @@ Updated: 12/18/2025
       var fineMap = collectCampaignFinePrint();
       if (!Object.keys(fineMap).length) return;
 
-      var root = qs("section.plans") || document;
-      var cards = qsa("article.card, article", root);
+      var root = getPlansContainer() || document;
+      var cards = qsa("article.card, article, .card", root);
       var period = detectCurrentPeriodSafe();
 
       cards.forEach(function (card) {
@@ -3026,375 +3068,4 @@ Updated: 12/18/2025
   })();
 
 })();
-
-
-
-/* =====================================================================================
-BNP REQUIRED ENFORCEMENT + NEXT/SUBMIT BLOCKER (ADD-ON)
-===================================================================================== */
-(function () {
-  "use strict";
-
-  function $ (sel, root) { return (root || document).querySelector(sel); }
-  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-
-  function isVisible(el) {
-    if (!el) return false;
-    var cs = getComputedStyle(el);
-    return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
-  }
-
-  function isFieldVisible(el) {
-    if (!el) return false;
-    if (el.type === "hidden") return false;
-    if (el.disabled) return false;
-
-    var p = el;
-    while (p && p !== document.body) {
-      var pcs = getComputedStyle(p);
-      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
-      p = p.parentElement;
-    }
-
-    var cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") {
-      var r = el.getBoundingClientRect();
-      if ((r.width === 0 && r.height === 0)) return false;
-    }
-    return true;
-  }
-
-  function isEmptyValue(v) {
-    return !String(v == null ? "" : v).trim();
-  }
-
-  function looksLikeEmailField(el) {
-    if (!el) return false;
-    var t = (el.getAttribute("type") || "").toLowerCase();
-    if (t === "email") return true;
-    if (el.id === "id13") return true;
-    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
-    return false;
-  }
-
-  function isValidEmail(v) {
-    var s = String(v || "").trim();
-    if (!s) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-  }
-
-  function debounce(fn, ms) {
-    var t = null;
-    return function () {
-      var args = arguments;
-      clearTimeout(t);
-      t = setTimeout(function () { fn.apply(null, args); }, ms);
-    };
-  }
-
-  function ensureValidationStyles() {
-    if (document.getElementById("bnp-required-style-addon")) return;
-    var s = document.createElement("style");
-    s.id = "bnp-required-style-addon";
-    s.textContent = `
-      .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
-      .bnp-inline-error {
-        display:none;
-        margin-top:6px;
-        font-size:12px;
-        line-height:1.35;
-        color:#b00000;
-        font-weight:600;
-      }
-      .bnp-inline-error.is-on { display:block; }
-      .bnp-req-star { display:inline !important; color:#b00000 !important; font-weight:700 !important; margin-left:4px !important; }
-    `;
-    document.head.appendChild(s);
-  }
-
-  function closestQuestionBlock(el) {
-    if (!el) return null;
-    return (
-      el.closest("p[id^='p']") ||
-      el.closest(".drg-element") ||
-      el.closest(".form-group") ||
-      el.closest(".question") ||
-      null
-    );
-  }
-
-  function getLabelForField(field, scope) {
-    if (!field) return null;
-
-    if (field.id) {
-      var lbl = (scope || document).querySelector("label[for='" + field.id + "']");
-      if (lbl) return lbl;
-      lbl = document.querySelector("label[for='" + field.id + "']");
-      if (lbl) return lbl;
-    }
-
-    var wrapped = field.closest && field.closest("label");
-    if (wrapped) return wrapped;
-
-    var block = closestQuestionBlock(field);
-    if (block) {
-      var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
-      if (ql) return ql;
-    }
-
-    return null;
-  }
-
-  function ensureReqStarOnLabel(labelEl) {
-    if (!labelEl) return;
-    if (labelEl.querySelector(".bnp-req-star")) return;
-    var star = document.createElement("span");
-    star.className = "bnp-req-star";
-    star.textContent = "*";
-    labelEl.appendChild(star);
-  }
-
-  // DF exclusions you had in the master
-  function shouldExcludeRequired(field) {
-    if (!field) return true;
-    if (field.disabled) return true;
-    var type = (field.getAttribute("type") || "").toLowerCase();
-    if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return true;
-
-    // Exclusions: Cell phone + sms opt-in blocks/ids
-    if (field.closest && field.closest("#p124, #ps3")) return true;
-    if (field.id === "id124" || field.id === "id974" || field.id === "id124_ccc") return true;
-    if (field.id === "smss3") return true;
-
-    return false;
-  }
-
-  function setRequired(field, on) {
-    if (!field) return;
-    try {
-      if (on) {
-        field.setAttribute("aria-required", "true");
-        field.dataset.__bnpForcedReqAddon = "1";
-        if (field.tagName === "INPUT" || field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
-          field.required = true;
-        }
-      } else {
-        if (field.dataset && field.dataset.__bnpForcedReqAddon === "1") {
-          field.removeAttribute("aria-required");
-          try { field.required = false; } catch (e) {}
-          delete field.dataset.__bnpForcedReqAddon;
-        }
-      }
-    } catch (e) {}
-  }
-
-  function enforceRequiredForSection(sectionId) {
-    var section = document.getElementById(sectionId);
-    if (!section) return;
-
-    var fields = $all("input,select,textarea", section);
-    fields.forEach(function (f) {
-      if (shouldExcludeRequired(f)) { setRequired(f, false); return; }
-      if (isFieldVisible(f)) setRequired(f, true);
-      else setRequired(f, false);
-    });
-
-    // Always require email in profile if present (and visible)
-    if (sectionId === "content1") {
-      var email = document.getElementById("id13");
-      if (email && !shouldExcludeRequired(email) && isFieldVisible(email)) setRequired(email, true);
-    }
-  }
-
-  function enforceRequiredNow() {
-    enforceRequiredForSection("content1");
-    enforceRequiredForSection("content4");
-  }
-
-  function clearInvalidMarks(stepRoot) {
-    if (!stepRoot) return;
-    $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
-    $all(".bnp-inline-error", stepRoot).forEach(function (e) {
-      e.classList.remove("is-on");
-      e.textContent = "";
-    });
-    $all("input,select,textarea", stepRoot).forEach(function (el) {
-      try { el.removeAttribute("aria-invalid"); } catch (e) {}
-    });
-  }
-
-  function ensureInlineError(block) {
-    if (!block) return null;
-    var e = block.querySelector(".bnp-inline-error");
-    if (e) return e;
-    e = document.createElement("div");
-    e.className = "bnp-inline-error";
-    block.appendChild(e);
-    return e;
-  }
-
-  function markRequiredIndicators(stepRoot) {
-    if (!stepRoot) return;
-
-    var fields = $all("input, select, textarea", stepRoot).filter(function (f) {
-      if (!f || f.disabled) return false;
-      if (!isFieldVisible(f)) return false;
-      return true;
-    });
-
-    fields.forEach(function (f) {
-      if (!f.required && (f.getAttribute("aria-required") !== "true")) return;
-      var block = closestQuestionBlock(f) || stepRoot;
-      var lbl = (block.querySelector && (block.querySelector(".questionlabel label"))) || getLabelForField(f, stepRoot);
-      ensureReqStarOnLabel(lbl);
-    });
-  }
-
-  function validateStep(stepId) {
-    ensureValidationStyles();
-    enforceRequiredNow();
-
-    var root = document.getElementById(stepId);
-    if (!root) return { ok: true };
-
-    clearInvalidMarks(root);
-    markRequiredIndicators(root);
-
-    var required = $all("input[required], select[required], textarea[required], [aria-required='true']", root).filter(function (el) {
-      if (!el || el.disabled) return false;
-      if (!isFieldVisible(el)) return false;
-      if (shouldExcludeRequired(el)) return false;
-      return true;
-    });
-
-    for (var i = 0; i < required.length; i++) {
-      var el = required[i];
-
-      if (el.type === "radio" && el.name) {
-        var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
-          .filter(isFieldVisible)
-          .some(function (r) { return r.checked; });
-
-        if (!any) {
-          var b1 = closestQuestionBlock(el) || el;
-          if (b1 && b1.classList) b1.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e1 = ensureInlineError(b1);
-          if (e1) { e1.textContent = "Please choose an option."; e1.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-      } else if (el.type === "checkbox") {
-        if (!el.checked) {
-          var b2 = closestQuestionBlock(el) || el;
-          if (b2 && b2.classList) b2.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e2 = ensureInlineError(b2);
-          if (e2) { e2.textContent = "Please check the box to continue."; e2.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-      } else {
-        if (isEmptyValue(el.value)) {
-          var b3 = closestQuestionBlock(el) || el;
-          if (b3 && b3.classList) b3.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e3 = ensureInlineError(b3);
-          if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-        if (looksLikeEmailField(el) && !isValidEmail(el.value)) {
-          var bE = closestQuestionBlock(el) || el;
-          if (bE && bE.classList) bE.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var eE = ensureInlineError(bE);
-          if (eE) { eE.textContent = "Enter a valid email address."; eE.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-      }
-    }
-
-    return { ok: true };
-  }
-
-  function currentStepId() {
-    var c6 = document.getElementById("content6");
-    if (c6 && c6.classList.contains("modal-open") && isVisible(c6)) return "content6";
-
-    var c4 = document.getElementById("content4");
-    if (c4 && isVisible(c4)) return "content4";
-
-    var c1 = document.getElementById("content1");
-    if (c1 && isVisible(c1)) return "content1";
-
-    return null;
-  }
-
-  function blockIfInvalid(stepId) {
-    if (stepId !== "content1" && stepId !== "content4") return true;
-    var res = validateStep(stepId);
-    if (res.ok) return true;
-
-    try {
-      alert(stepId === "content4" ? "Please complete all required Shipping fields." : "Please complete all required Profile fields.");
-    } catch (e) {}
-
-    try {
-      if (res.focusEl && res.focusEl.scrollIntoView) res.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (res.focusEl && res.focusEl.focus) res.focusEl.focus({ preventScroll: true });
-    } catch (e) {}
-
-    return false;
-  }
-
-  function init() {
-    ensureValidationStyles();
-    enforceRequiredNow();
-
-    // Keep required in sync with DF show/hide
-    if (window.MutationObserver) {
-      var t1 = document.getElementById("content1");
-      var t4 = document.getElementById("content4");
-      var mo = new MutationObserver(debounce(enforceRequiredNow, 120));
-      if (t1) mo.observe(t1, { attributes: true, childList: true, subtree: true });
-      if (t4) mo.observe(t4, { attributes: true, childList: true, subtree: true });
-    }
-
-    // Block the custom Next button
-    document.addEventListener("click", function (e) {
-      var btn = e.target && e.target.closest && e.target.closest(".nl-actions .btn-next");
-      if (!btn) return;
-
-      var stepId = currentStepId();
-      if (!stepId) return;
-      if (stepId === "content6") return;
-
-      if (!blockIfInvalid(stepId)) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return false;
-      }
-    }, true);
-
-    // Block real form submits too
-    var form = document.querySelector("form");
-    if (form && !form.dataset.__bnpReqAddonSubmitGuard) {
-      form.dataset.__bnpReqAddonSubmitGuard = "1";
-      form.addEventListener("submit", function (ev) {
-        var stepId = currentStepId();
-        if (!stepId) return;
-        if (stepId === "content6") return;
-        if (!blockIfInvalid(stepId)) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          return false;
-        }
-      }, true);
-    }
-  }
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
-})();
-
-
+```
