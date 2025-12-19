@@ -2,23 +2,9 @@
    BNP MASTER SCRIPT (All originals + fixes, rolled into one)
    Updated: 12/17/2025
 
-   Includes:
-   - Payment-safe submit guard (prevents form.submit() bypass)
-   - ZIP -> City/State helper (fail-safe hide)
-   - FAQ accordion (single-open)
-   - Icon injection
-   - Tile alignment
-   - Newsletter sync (hidden inputs <-> toggles)
-   - Action bar alignment
-   - Wizard visibility guard (payment-safe)
-   - Mobile NL card patch (gated CTA)
-   - Compact checkboxes (Firefox-safe)
-   - Hero background animation
-   - FULL Subscribe + Pricing Orchestrator (NO GEO)
-   - GEO IP locator (separate)
-   - CART force-sync (original Section 3) + Cart Summary Sync add-on
-   - ACHR Chill monthly hide patch
-   - Campaign quoted text -> tile fine print
+   FIXES IN THIS VERSION:
+   - REMOVED "bnp-cart-summary" injection (Cart Summary Sync add-on deleted)
+   - STRONGER required-field validation on content1 (and content4)
 ===================================================================================== */
 
 (function () {
@@ -53,6 +39,14 @@
     var cs = getComputedStyle(el);
     return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
   }
+  function isFieldVisible(el) {
+    if (!el) return false;
+    if (el.type === "hidden") return false;
+    var cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+    if (el.offsetParent === null && cs.position !== "fixed") return false;
+    return true;
+  }
   function debounce(fn, ms) {
     var t = null;
     return function () {
@@ -63,7 +57,7 @@
   }
 
   /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
+     SECTION A — PAYMENT-SAFE SUBMIT GUUARD (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
@@ -1187,35 +1181,144 @@
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
 
-    function validateStep(stepId) {
-      var root = document.getElementById(stepId);
-      if (!root) return true;
+    // ---------- STRONG REQUIRED VALIDATION (NEW) ----------
+    function ensureValidationStyles() {
+      if (document.getElementById("bnp-required-style")) return;
+      var s = document.createElement("style");
+      s.id = "bnp-required-style";
+      s.textContent = `
+        .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
+        .bnp-invalid input, .bnp-invalid select, .bnp-invalid textarea { border-color: #b00000 !important; }
+      `;
+      document.head.appendChild(s);
+    }
 
+    function clearInvalidMarks(stepRoot) {
+      if (!stepRoot) return;
+      $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
+    }
+
+    function closestQuestionBlock(el, stepRoot) {
+      if (!el) return null;
+      return (
+        el.closest("p[id^='p']") ||
+        el.closest(".drg-element") ||
+        el.closest(".form-group") ||
+        el.closest(".question") ||
+        (stepRoot || document).querySelector("p[id^='p']")
+      );
+    }
+
+    function isEmptyValue(v) {
+      return !String(v == null ? "" : v).trim();
+    }
+
+    function validateQuestionBlock(block) {
+      if (!block) return { ok: true };
+
+      var fields = $all("input, select, textarea", block).filter(function (el) {
+        if (!el) return false;
+        if (!isFieldVisible(el)) return false;
+        return true;
+      });
+
+      if (!fields.length) return { ok: true };
+
+      // If there is ANY checked radio/checkbox in the block, it's ok.
+      var radios = fields.filter(function (f) { return f.type === "radio"; });
+      if (radios.length) {
+        var anyChecked = radios.some(function (r) { return r.checked; });
+        return { ok: anyChecked, focusEl: (radios[0] || null) };
+      }
+
+      var cbs = fields.filter(function (f) { return f.type === "checkbox"; });
+      if (cbs.length) {
+        var anyCb = cbs.some(function (c) { return c.checked; });
+        return { ok: anyCb, focusEl: (cbs[0] || null) };
+      }
+
+      // Otherwise check text/select/textarea
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (f.tagName === "SELECT") {
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
+        } else if (f.type === "email" || f.type === "text" || f.type === "tel" || f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA") {
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f };
+        } else {
+          // fallback
+          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f };
+        }
+      }
+      return { ok: true };
+    }
+
+    function validateStep(stepId) {
+      ensureValidationStyles();
+
+      var root = document.getElementById(stepId);
+      if (!root) return { ok: true };
+
+      clearInvalidMarks(root);
+
+      // 1) HTML5 required attr pass
       var required = $all("input[required], select[required], textarea[required]", root).filter(function (el) {
         if (!el || el.disabled) return false;
-        if (el.type === "hidden") return false;
-        var cs = getComputedStyle(el);
-        if (cs.display === "none" || cs.visibility === "hidden") return false;
+        if (!isFieldVisible(el)) return false;
         return true;
       });
 
       for (var i = 0; i < required.length; i++) {
         var el = required[i];
-
-        if (el.type === "checkbox" || el.type === "radio") {
-          if (el.type === "radio" && el.name) {
-            var any = $all('input[type="radio"][name="' + el.name + '"]', root).some(function (r) {
-              return r.checked;
-            });
-            if (!any) return false;
-          } else if (el.type === "checkbox") {
-            if (!el.checked) return false;
+        if (el.type === "radio" && el.name) {
+          var any = $all('input[type="radio"][name="' + el.name + '"]', root).filter(isFieldVisible).some(function (r) { return r.checked; });
+          if (!any) {
+            var b1 = closestQuestionBlock(el, root) || el;
+            if (b1 && b1.classList) b1.classList.add("bnp-invalid");
+            return { ok: false, focusEl: el };
+          }
+        } else if (el.type === "checkbox") {
+          if (!el.checked) {
+            var b2 = closestQuestionBlock(el, root) || el;
+            if (b2 && b2.classList) b2.classList.add("bnp-invalid");
+            return { ok: false, focusEl: el };
           }
         } else {
-          if (!String(el.value || "").trim()) return false;
+          if (isEmptyValue(el.value)) {
+            var b3 = closestQuestionBlock(el, root) || el;
+            if (b3 && b3.classList) b3.classList.add("bnp-invalid");
+            return { ok: false, focusEl: el };
+          }
         }
       }
-      return true;
+
+      // 2) DragonForms "required star" pass
+      var starNodes = $all(".req-star, .reqStar, .required-star", root);
+      var blocks = [];
+      var seen = new Set();
+
+      starNodes.forEach(function (s) {
+        var block =
+          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
+          null;
+        if (block && !seen.has(block)) {
+          seen.add(block);
+          blocks.push(block);
+        }
+      });
+
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        // Skip blocks that are not visible
+        if (!isVisible(b)) continue;
+
+        var res = validateQuestionBlock(b);
+        if (!res.ok) {
+          if (b.classList) b.classList.add("bnp-invalid");
+          return { ok: false, focusEl: res.focusEl || (b.querySelector("input,select,textarea") || b) };
+        }
+      }
+
+      return { ok: true };
     }
 
     var COUNTRY_DROPDOWN_ID = "#id7";
@@ -1604,7 +1707,9 @@
       var input = li.querySelector("input[type='radio']");
       if (!input) return null;
 
-      var labelEl = input.id ? document.querySelector("label[for='" + input.id + "']") : li.querySelector("label");
+      var labelEl = input.id
+        ? document.querySelector("label[for='" + input.id + "']")
+        : li.querySelector("label");
       var raw = text(labelEl) || text(li);
       var lower = raw.toLowerCase();
 
@@ -1777,21 +1882,6 @@
         selectCampaignRadioAny(planMap, period, region);
         selectRequestedVersion(rvKind);
 
-        var amount = (card.querySelector(".price .amount") && card.querySelector(".price .amount").textContent) || "$0.00";
-        var per = (card.querySelector(".price .per") && card.querySelector(".price .per").textContent) || "/ yr";
-
-        CACHE.product = {
-          name: title,
-          kind: kind,
-          price: amount,
-          format: kind === "print" ? "Print" : "Digital",
-          term: /mo/.test((per || "").toLowerCase()) ? "Monthly" : "Annual",
-          imageUrl:
-            kind === "print"
-              ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
-              : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png"
-        };
-
         applyPricesNow();
         if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
       }, true);
@@ -1851,7 +1941,7 @@
       actions.style.cssText =
         "display:flex;gap:12px;padding:12px;margin-top:24px;background:#fff;border-top:1px solid #e6e8ee;align-items:center";
 
-      // IMPORTANT: center slot exists so Pay Now sits centered (not right)
+      // Center slot so Pay Now sits centered
       actions.innerHTML =
         '<button type="button" class="btn btn-back">Back</button>' +
         '<div class="bnp-action-center" style="flex:1;display:flex;justify-content:center;align-items:center;"></div>' +
@@ -1890,16 +1980,14 @@
         el.style.transition = "background-color 0.3s";
       }
 
-      // Track original submit wrapper location so we can restore it when leaving payment
+      // Track original submit wrapper location
       var submitDock = { wrap: null, parent: null, nextSibling: null };
 
       function findOriginalPaymentSubmitWrapper() {
         if (!content6) return null;
-        // Your DF submit wrapper
         var wrap = content6.querySelector("#submitbtn");
         if (wrap) return wrap;
 
-        // Fallback: find a visible submit input/button and use its closest wrapper
         var btn =
           content6.querySelector('input[type="submit"]') ||
           content6.querySelector('button[type="submit"]') ||
@@ -1921,11 +2009,6 @@
         if (!submitDock.wrap || !submitDock.parent) return;
         if (!document.body.contains(submitDock.parent)) return;
 
-        // If it's already back inside content6, nothing to do
-        if (submitDock.wrap.closest && submitDock.wrap.closest("#content6")) {
-          // Still restore position if needed
-        }
-
         try {
           if (submitDock.nextSibling && submitDock.nextSibling.parentNode === submitDock.parent) {
             submitDock.parent.insertBefore(submitDock.wrap, submitDock.nextSibling);
@@ -1934,17 +2017,13 @@
           }
         } catch (e) {}
 
-        // Re-hide original when not on payment step (so it doesn't show in hidden content6)
         try { submitDock.wrap.style.display = "none"; } catch (e) {}
       }
 
-      // Move the REAL DF submit into the action bar center slot (no proxy, no right alignment)
       function moveRealSubmitIntoPaymentBar() {
         if (!content6) return;
         var centerSlot = actions.querySelector(".bnp-action-center");
         if (!centerSlot) return;
-
-        // Only once per payment-open cycle
         if (actions.dataset.__payInstalled === "1") return;
 
         var wrap = findOriginalPaymentSubmitWrapper();
@@ -1952,15 +2031,12 @@
 
         ensureSubmitDockCaptured(wrap);
 
-        // find the actual submit input inside wrapper
         var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"]');
         if (realBtn) {
-          // Keep native handler (onclick checkPayment) intact
           try { realBtn.value = "Pay Now"; } catch (e) {}
           stylePayNow(realBtn);
         }
 
-        // Put the wrapper in the center lane
         try {
           wrap.style.display = "inline-flex";
           wrap.style.alignItems = "center";
@@ -1973,9 +2049,7 @@
         centerSlot.innerHTML = "";
         centerSlot.appendChild(wrap);
 
-        // Hide action bar "Next" (payment is handled by the real submit we just moved)
         try { nextBtn.style.display = "none"; } catch (e) {}
-
         actions.dataset.__payInstalled = "1";
       }
 
@@ -1986,7 +2060,6 @@
         }
         show(actions);
 
-        // leaving payment -> restore original submit back into content6 and reset bar
         if (step !== "content6") {
           try { nextBtn.style.display = ""; } catch (e) {}
           actions.dataset.__payInstalled = "";
@@ -2091,8 +2164,6 @@
         placeActions(content6);
         step = "content6";
         updateButtons();
-
-        // move ORIGINAL submit into the bar (centered)
         moveRealSubmitIntoPaymentBar();
       }
 
@@ -2111,9 +2182,7 @@
         closePaymentModal();
         hide(actions);
 
-        // restore submit when fully leaving wizard
         updateButtons();
-
         step = "plans";
         scrollToHeaderNow();
       }
@@ -2137,7 +2206,6 @@
 
       function backFromPayment() {
         closePaymentModal();
-        // updateButtons() will restore submit back into content6
         if (chosenKind === "print" && content4) {
           show(content4);
           placeActions(content4);
@@ -2162,7 +2230,15 @@
         if (step === "newsletters") { goToContent1(); return; }
 
         if (step === "content1") {
-          if (!validateStep("content1")) { alert("Please complete required Profile fields."); return; }
+          var v1 = validateStep("content1");
+          if (!v1.ok) {
+            alert("Please complete all required Profile fields.");
+            try {
+              if (v1.focusEl && v1.focusEl.scrollIntoView) v1.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (v1.focusEl && v1.focusEl.focus) v1.focusEl.focus({ preventScroll: true });
+            } catch (e) {}
+            return;
+          }
           if (chosenFree) { submitViaNative(content1); return; }
           if (chosenKind === "print") goToContent4();
           else goToPayment();
@@ -2170,14 +2246,21 @@
         }
 
         if (step === "content4") {
-          if (!validateStep("content4")) { alert("Please complete required Shipping fields."); return; }
+          var v4 = validateStep("content4");
+          if (!v4.ok) {
+            alert("Please complete all required Shipping fields.");
+            try {
+              if (v4.focusEl && v4.focusEl.scrollIntoView) v4.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (v4.focusEl && v4.focusEl.focus) v4.focusEl.focus({ preventScroll: true });
+            } catch (e) {}
+            return;
+          }
           if (chosenFree) submitViaNative(content4);
           else goToPayment();
           return;
         }
 
         if (step === "content6") {
-          // Next is hidden on payment step; kept as fallback
           submitViaNative(content6);
         }
       });
@@ -2236,7 +2319,7 @@
       preloadPaymentStep();
       hide(actions);
 
-      // IMPORTANT: hide original submit while content6 is preloaded/hidden
+      // Hide original submit while content6 preloaded/hidden
       try {
         var w = findOriginalPaymentSubmitWrapper();
         if (w) w.style.display = "none";
@@ -2361,7 +2444,7 @@
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (UPDATED: price ALWAYS from selected radio first)
+     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first)
      ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
@@ -2382,7 +2465,6 @@
     var fmt = function (n) { return typeof n === "number" && !isNaN(n) ? "$" + n.toFixed(2) : null; };
 
     function findCheckedProductRadio() {
-      // Prefer campaign/standard checked radio (this is the true source of cart pricing)
       var roots = [Q(".campaign-placeholder"), Q(".standard-rates"), Q(".promo-key"), document].filter(Boolean);
       for (var i = 0; i < roots.length; i++) {
         var r = roots[i];
@@ -2414,7 +2496,6 @@
       var cls = ((li && li.className) || "") + " " + (input.className || "");
       var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
       var per = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
-      var region = /\bCANprod\b/i.test(cls) ? "can" : /\bINTprod\b/i.test(cls) ? "int" : "usa";
 
       return {
         input: input,
@@ -2422,7 +2503,6 @@
         rawLabel: raw,
         kind: kind,
         per: per,
-        region: region,
         price: (typeof priceNum === "number" && !isNaN(priceNum)) ? fmt(priceNum) : null
       };
     }
@@ -2460,7 +2540,6 @@
     function computeCartSnapshot() {
       var radio = decodeSelectedRadio();
 
-      // If a product radio is selected, use it as truth
       if (radio && radio.kind) {
         var term = (radio.per === "monthly") ? "Monthly" : "Annual";
         var format = radio.kind === "print" ? "Print" : "Digital";
@@ -2469,13 +2548,10 @@
             ? "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Cover_Widget.png"
             : "https://cdn.omeda.com/hosted/images/CLIENT_BNP/BNPCD/NEWS_Mobile_Mockup_Widget.png";
 
-        // If price wasn't parseable, fall back to tile amount for that kind
         var price = radio.price || tilePriceFallback(radio.kind);
-
         return { kind: radio.kind, price: price, term: term, format: format, img: img };
       }
 
-      // Otherwise fall back to selected tile (free/fan/no selection)
       var kind = currentKindFromTile();
       if (!kind) return { kind: null, price: null, term: null, format: null, img: null };
       if (kind === "fan") return { kind: "fan", price: null, term: null, format: null, img: null };
@@ -2648,135 +2724,6 @@
     }
 
     onReady(init);
-  })();
-
-  /* ============================================================
-     CART SUMMARY SYNC ADD-ON (unchanged)
-     ============================================================ */
-  (function () {
-    if (BNP.__CART_SUMMARY_ADDON__) return;
-    BNP.__CART_SUMMARY_ADDON__ = true;
-
-    window.__BNP_CART__ = window.__BNP_CART__ || { sync: function () {}, debug: false };
-
-    function findCheckedProductRadio() {
-      var roots = [$(".campaign-placeholder"), $(".standard-rates"), document].filter(Boolean);
-      for (var i = 0; i < roots.length; i++) {
-        var r = roots[i];
-        var checked = $("input[type='radio']:checked", r);
-        if (checked) return checked;
-      }
-      return null;
-    }
-
-    function labelForInput(input) {
-      if (!input) return null;
-      if (input.id) {
-        var l = document.querySelector("label[for='" + input.id + "']");
-        if (l) return l;
-      }
-      var parentLabel = input.closest && input.closest("label");
-      return parentLabel || null;
-    }
-
-    function decodeSelectedProduct() {
-      var input = findCheckedProductRadio();
-      if (!input) return null;
-
-      var li = input.closest && input.closest("li");
-      var labelEl = labelForInput(input) || (li ? $("label", li) : null);
-      var raw = text(labelEl) || (li ? text(li) : "") || "";
-      var price = moneyFromString(raw);
-
-      var cls = ((li && li.className) || "") + " " + (input.className || "");
-      var kind = /\bPprod\b/i.test(cls) ? "print" : /\bDprod\b/i.test(cls) ? "digital" : /\bAprod\b/i.test(cls) ? "chill" : null;
-      var period = /\bterm2\b/i.test(cls) || /\bterm3\b/i.test(cls) ? "monthly" : /\bterm26\b/i.test(cls) ? "yearly" : null;
-      var region = /\bCANprod\b/i.test(cls) ? "can" : /\bINTprod\b/i.test(cls) ? "int" : "usa";
-
-      return { id: input.id || "", value: input.value || "", rawLabel: raw, price: price, kind: kind, period: period, region: region };
-    }
-
-    function ensureCartSummaryEl() {
-      var host = $("#content6") || $(".promo-key") || $("section.plans") || document.body;
-      var el = $("#bnp-cart-summary");
-      if (el) return el;
-
-      el = document.createElement("div");
-      el.id = "bnp-cart-summary";
-      el.style.cssText =
-        "margin:12px 0;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.06);font-size:13px;line-height:1.35;";
-      el.innerHTML =
-        "<div style='font-weight:800;margin-bottom:4px;'>Cart</div>" +
-        "<div class='bnp-cart-line'>No selection yet.</div>";
-
-      if (host && host.firstChild) host.insertBefore(el, host.firstChild);
-      else if (host) host.appendChild(el);
-
-      return el;
-    }
-
-    var _lastSig = "";
-    function signature(sel) {
-      if (!sel) return "none";
-      var promo = ($("#id49") && $("#id49").value) ? ($("#id49").value || "").trim() : "";
-      var country = ($("#id7") && $("#id7").value) ? ($("#id7").value || "").trim() : "";
-      var billing = ($("#billingSeg") && $("#billingSeg").dataset) ? ($("#billingSeg").dataset.active || "") : "";
-      return [sel.id, sel.value, promo, country, billing].join("|");
-    }
-
-    var doSync = debounce(function (opts) {
-      try {
-        var sel = decodeSelectedProduct();
-        var sig = signature(sel);
-        if (!(opts && opts.force) && sig === _lastSig) return;
-        _lastSig = sig;
-
-        var summary = ensureCartSummaryEl();
-        var line = summary.querySelector(".bnp-cart-line");
-
-        if (!sel) {
-          if (line) line.textContent = "No selection yet.";
-        } else {
-          var nice =
-            (sel.kind ? sel.kind.toUpperCase() : "PRODUCT") +
-            (sel.period ? " | " + sel.period : "") +
-            (sel.region ? " | " + sel.region.toUpperCase() : "");
-
-          var p = (typeof sel.price === "number" && !isNaN(sel.price)) ? (" | $" + sel.price.toFixed(2)) : "";
-          if (line) line.textContent = nice + p;
-        }
-      } catch (e) {
-        console.warn("[BNP CART SUMMARY] sync error:", e);
-      }
-    }, 140);
-
-    window.__BNP_CART__.sync = function (opts) { doSync(opts || {}); };
-
-    document.addEventListener("change", function (e) {
-      var t = e.target;
-      if (!t) return;
-
-      if (t.matches && t.matches("input[type='radio']")) window.__BNP_CART__.sync();
-      if (t.id === "id49") window.__BNP_CART__.sync();
-      if (t.id === "id7") window.__BNP_CART__.sync();
-    }, true);
-
-    document.addEventListener("click", function (e) {
-      var t = e.target;
-      if (!t) return;
-
-      if (t.closest && t.closest("#monthlyBtn, #annualBtn, [data-billing='monthly'], [data-billing='yearly']")) {
-        setTimeout(function () { window.__BNP_CART__.sync(); }, 120);
-      }
-      if (t.closest && t.closest("section.plans article.card, section.plans article")) {
-        setTimeout(function () { window.__BNP_CART__.sync(); }, 120);
-      }
-      if (t.id === "promo-code-save" || t.id === "promo-code-clear") {
-        setTimeout(function () { window.__BNP_CART__.sync(); }, 200);
-      }
-    }, true);
-
-    onReady(function () { window.__BNP_CART__.sync({ force: true }); });
   })();
 
   /* ============================================================
