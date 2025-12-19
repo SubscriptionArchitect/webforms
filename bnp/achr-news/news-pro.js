@@ -1,7 +1,8 @@
+
 <!-- =====================================================================================
-NEWS PRO SITE MASTER SCRIPT (REQUIRED LOGIC REMOVED)
+NEWS PRO SITE MASTER SCRIPT (TILES VISIBILITY FAILSAFE + PAYMENT-SAFE SUBMIT)
 Brandon Decker | UX LAB
-Updated: 12/17/2025
+Updated: 12/18/2025
 ===================================================================================== -->
 
 
@@ -42,7 +43,6 @@ Updated: 12/17/2025
     if (el.type === "hidden") return false;
     if (el.disabled) return false;
 
-    // if any parent is hidden, treat as hidden
     var p = el;
     while (p && p !== document.body) {
       var pcs = getComputedStyle(p);
@@ -1095,7 +1095,7 @@ Updated: 12/17/2025
 
   /* ============================================================
      SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
-     (REQUIRED ENFORCEMENT + REQUIRED VALIDATION REMOVED)
+     (TILES VISIBILITY FAILSAFE ADDED)
      ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
@@ -1125,6 +1125,8 @@ Updated: 12/17/2025
 
       if (el.matches("section.plans, section.compare, section.hero")) {
         el.style.removeProperty("display");
+        el.style.removeProperty("visibility");
+        el.style.removeProperty("opacity");
         return;
       }
 
@@ -1133,10 +1135,14 @@ Updated: 12/17/2025
         /^content(1|4|6)$/.test(el.id || "")
       ) {
         el.style.display = "block";
+        el.style.removeProperty("visibility");
+        el.style.removeProperty("opacity");
         return;
       }
 
       el.style.removeProperty("display");
+      el.style.removeProperty("visibility");
+      el.style.removeProperty("opacity");
       if (getComputedStyle(el).display === "none") el.style.display = "block";
     }
 
@@ -1885,6 +1891,62 @@ Updated: 12/17/2025
         return;
       }
 
+      function forceShowPlansHard() {
+        // Only enforce when we're actually on plans step (i.e., no wizard step visible)
+        var anyStepOpen =
+          (newsletters && isVisible(newsletters)) ||
+          (content1 && isVisible(content1)) ||
+          (content4 && isVisible(content4)) ||
+          (content6 && (content6.classList.contains("modal-open") && isVisible(content6)));
+
+        if (anyStepOpen) return;
+
+        try {
+          if (hero) {
+            hero.style.removeProperty("display");
+            hero.style.removeProperty("visibility");
+            hero.style.removeProperty("opacity");
+            if (getComputedStyle(hero).display === "none") hero.style.setProperty("display", "block", "important");
+          }
+          if (plans) {
+            plans.style.removeProperty("display");
+            plans.style.removeProperty("visibility");
+            plans.style.removeProperty("opacity");
+            if (getComputedStyle(plans).display === "none") plans.style.setProperty("display", "block", "important");
+          }
+          if (compare) {
+            compare.style.removeProperty("display");
+            compare.style.removeProperty("visibility");
+            compare.style.removeProperty("opacity");
+            if (getComputedStyle(compare).display === "none") compare.style.setProperty("display", "block", "important");
+          }
+          if (faq) {
+            faq.style.removeProperty("display");
+            faq.style.removeProperty("visibility");
+            faq.style.removeProperty("opacity");
+          }
+          if (promoBar) {
+            promoBar.style.removeProperty("display");
+            promoBar.style.removeProperty("visibility");
+            promoBar.style.removeProperty("opacity");
+          }
+          if (promoToggle) {
+            promoToggle.style.removeProperty("display");
+            promoToggle.style.removeProperty("visibility");
+            promoToggle.style.removeProperty("opacity");
+          }
+
+          // make sure modal classes aren't accidentally stuck
+          document.documentElement.classList.remove("payment-open");
+          document.body.classList.remove("payment-open");
+          if (backdrop) backdrop.style.display = "none";
+          if (content6) {
+            content6.classList.remove("modal-open");
+            if (!content6.classList.contains("payment-preload-hidden")) content6.classList.add("payment-preload-hidden");
+          }
+        } catch (e) {}
+      }
+
       function submitViaNative(stepRoot) {
         var root = stepRoot || document;
         var form =
@@ -2167,8 +2229,9 @@ Updated: 12/17/2025
         closePaymentModal();
         hide(actions);
 
-        updateButtons();
         step = "plans";
+        updateButtons();
+        forceShowPlansHard();
         scrollToHeaderNow();
       }
 
@@ -2272,6 +2335,7 @@ Updated: 12/17/2025
         }, true);
       });
 
+      // Initial: show plans step explicitly + fail-safe reassertion
       show(hero);
       show(plans);
       show(compare);
@@ -2296,6 +2360,17 @@ Updated: 12/17/2025
 
       step = "plans";
       updateButtons();
+
+      // Failsafe: if ANYTHING hides the tiles, bring plans back when no wizard step is open.
+      forceShowPlansHard();
+      setTimeout(forceShowPlansHard, 0);
+      setTimeout(forceShowPlansHard, 120);
+      setTimeout(forceShowPlansHard, 300);
+
+      if (window.MutationObserver) {
+        var mo = new MutationObserver(debounce(forceShowPlansHard, 80));
+        mo.observe(document.documentElement, { attributes: true, subtree: true, childList: true, attributeFilter: ["style", "class"] });
+      }
     }
 
     function initAll() {
@@ -2951,6 +3026,7 @@ Updated: 12/17/2025
   })();
 
 })();
+
 
 
 /* =====================================================================================
