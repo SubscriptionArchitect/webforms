@@ -12,18 +12,34 @@
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
 
-  function forceVisible(el, preferredDisplay) {
+  function depthOf(el) {
+    var d = 0, p = el;
+    while (p && p !== document.body) { d++; p = p.parentElement; }
+    return d;
+  }
+
+  function rememberDisplay(el) {
+    if (!el) return "block";
+    if (el.dataset && el.dataset.__bnpDisp) return el.dataset.__bnpDisp;
+    var cs = getComputedStyle(el);
+    var disp = (cs.display && cs.display !== "none") ? cs.display : "block";
+    try { el.dataset.__bnpDisp = disp; } catch (e) {}
+    return disp;
+  }
+
+  function ensureShown(el) {
     if (!el) return false;
+
+    var changed = false;
 
     try { el.hidden = false; } catch (e) {}
     try { el.removeAttribute("hidden"); } catch (e) {}
     try { el.removeAttribute("aria-hidden"); } catch (e) {}
 
     var cs = getComputedStyle(el);
-    var changed = false;
 
     if (cs.display === "none") {
-      el.style.setProperty("display", preferredDisplay || "block", "important");
+      el.style.setProperty("display", rememberDisplay(el), "important");
       changed = true;
     }
     if (cs.visibility === "hidden") {
@@ -34,58 +50,144 @@
       el.style.setProperty("opacity", "1", "important");
       changed = true;
     }
+    if (cs.pointerEvents === "none") {
+      el.style.setProperty("pointer-events", "auto", "important");
+      changed = true;
+    }
+
+    var rect = el.getBoundingClientRect();
+    var hasArea = rect.width > 10 && rect.height > 10;
+
+    if (!hasArea) {
+      var sh = el.scrollHeight || 0;
+      var sw = el.scrollWidth || 0;
+
+      if ((sh > 60 || sw > 200) && (rect.height < 5 || rect.width < 5)) {
+        if (el.style && (el.style.height === "0px" || el.style.height === "0")) {
+          el.style.removeProperty("height");
+          changed = true;
+        }
+        if (el.style && (el.style.maxHeight === "0px" || el.style.maxHeight === "0")) {
+          el.style.removeProperty("max-height");
+          changed = true;
+        }
+        if (cs.maxHeight === "0px") {
+          el.style.removeProperty("max-height");
+          changed = true;
+        }
+        if (cs.height === "0px") {
+          el.style.removeProperty("height");
+          changed = true;
+        }
+        if (cs.overflow === "hidden" || cs.overflowY === "hidden") {
+          el.style.removeProperty("overflow");
+          el.style.removeProperty("overflow-y");
+          changed = true;
+        }
+      }
+    }
 
     return changed;
   }
 
-  function findPlansContainer() {
-    return (
+  function findPlansRoot() {
+    if (window.__BNP_PLANS_ROOT && document.body.contains(window.__BNP_PLANS_ROOT)) return window.__BNP_PLANS_ROOT;
+
+    var direct =
       $("section.plans") ||
       $(".plans") ||
       $("section[aria-label='Plans']") ||
       $("section[aria-label*='Plan']") ||
       $("[data-section='plans']") ||
       $("[data-plans]") ||
-      null
-    );
-  }
+      $("#plans") ||
+      null;
 
-  function findPlanCards(plans) {
-    if (!plans) return [];
-    var cards = $all(".card", plans);
-    if (cards.length) return cards;
-    cards = $all("article", plans);
-    if (cards.length) return cards;
-    return [];
+    function isGoodRoot(el) {
+      if (!el) return false;
+      var cards = el.querySelectorAll(".card");
+      if (cards.length < 2) return false;
+      var priced = 0;
+      for (var i = 0; i < cards.length; i++) {
+        var c = cards[i];
+        if (c.querySelector(".price .amount") || c.querySelector(".price") || c.querySelector(".btn")) priced++;
+      }
+      return priced >= 2;
+    }
+
+    if (direct && isGoodRoot(direct)) {
+      window.__BNP_PLANS_ROOT = direct;
+      return direct;
+    }
+
+    var candidates = [];
+    var nodes = $all("section, main, div");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var cards = el.querySelectorAll(".card");
+      if (!cards || cards.length < 2) continue;
+
+      var priced = 0;
+      for (var j = 0; j < cards.length; j++) {
+        var c = cards[j];
+        if (c.querySelector(".price .amount") || c.querySelector(".price") || c.querySelector(".btn")) priced++;
+      }
+      if (priced < 2) continue;
+
+      candidates.push({ el: el, cards: cards.length, depth: depthOf(el) });
+    }
+
+    candidates.sort(function (a, b) {
+      if (b.cards !== a.cards) return b.cards - a.cards;
+      return a.depth - b.depth;
+    });
+
+    if (candidates.length) {
+      window.__BNP_PLANS_ROOT = candidates[0].el;
+      return candidates[0].el;
+    }
+
+    return null;
   }
 
   function reviveTiles() {
-    var plans = findPlansContainer();
+    var plans = findPlansRoot();
     if (!plans) return;
 
-    forceVisible(plans, "block");
+    ensureShown(plans);
 
     var p = plans.parentElement;
-    for (var i = 0; i < 3 && p && p !== document.body; i++) {
-      forceVisible(p, "");
+    for (var i = 0; i < 6 && p && p !== document.body; i++) {
+      ensureShown(p);
       p = p.parentElement;
     }
 
-    var cards = findPlanCards(plans);
-    cards.forEach(function (c) {
-      if (c.getAttribute("data-keepalive") === "off") return;
-      forceVisible(c, "block");
-    });
+    var cards = $all(".card", plans);
+    if (!cards.length) cards = $all("article", plans);
+
+    for (var k = 0; k < cards.length; k++) {
+      var c = cards[k];
+      if (c.getAttribute("data-keepalive") === "off") continue;
+      ensureShown(c);
+      var inner = $all(".price,.features,.btn,h2,h3,h4", c);
+      for (var m = 0; m < inner.length; m++) ensureShown(inner[m]);
+    }
+
+    if (cards.length && !plans.dataset.__bnpPlansMarked) {
+      try { plans.dataset.__bnpPlansMarked = "1"; } catch (e) {}
+      try { plans.setAttribute("data-bnp-plans-root", "1"); } catch (e) {}
+    }
   }
 
   function start() {
     reviveTiles();
+
     var ticks = 0;
     var iv = setInterval(function () {
       reviveTiles();
       ticks++;
-      if (ticks >= 25) clearInterval(iv);
-    }, 200);
+      if (ticks >= 120) clearInterval(iv);
+    }, 125);
 
     if (window.MutationObserver) {
       var mo = new MutationObserver(function () { reviveTiles(); });
@@ -97,6 +199,9 @@
       });
     }
   }
+
+  window.__BNP_FIND_PLANS_ROOT__ = findPlansRoot;
+  window.__BNP_REVIVE_TILES__ = reviveTiles;
 
   onReady(start);
 })();
@@ -116,6 +221,24 @@
   function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
   function text(el) { return ((el && (el.innerText || el.textContent)) || "").trim(); }
 
+  function getPlansContainer() {
+    var root = null;
+    if (window.__BNP_PLANS_ROOT && document.body.contains(window.__BNP_PLANS_ROOT)) root = window.__BNP_PLANS_ROOT;
+    if (!root && typeof window.__BNP_FIND_PLANS_ROOT__ === "function") root = window.__BNP_FIND_PLANS_ROOT__();
+    if (root) return root;
+
+    return (
+      document.querySelector("section.plans") ||
+      document.querySelector(".plans") ||
+      document.querySelector("section[aria-label='Plans']") ||
+      document.querySelector("section[aria-label*='Plan']") ||
+      document.querySelector("[data-section='plans']") ||
+      document.querySelector("[data-plans]") ||
+      document.querySelector("#plans") ||
+      null
+    );
+  }
+
   function moneyFromString(str) {
     if (!str) return null;
     var m =
@@ -128,28 +251,9 @@
   }
   function isVisible(el) {
     if (!el) return false;
+    if (el.hidden) return false;
     var cs = getComputedStyle(el);
     return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
-  }
-  function isFieldVisible(el) {
-    if (!el) return false;
-    if (el.type === "hidden") return false;
-    if (el.disabled) return false;
-
-    var p = el;
-    while (p && p !== document.body) {
-      var pcs = getComputedStyle(p);
-      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
-      p = p.parentElement;
-    }
-
-    var cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") {
-      var r = el.getBoundingClientRect();
-      if ((r.width === 0 && r.height === 0)) return false;
-    }
-    return true;
   }
   function debounce(fn, ms) {
     var t = null;
@@ -158,37 +262,6 @@
       clearTimeout(t);
       t = setTimeout(function () { fn.apply(null, args); }, ms);
     };
-  }
-
-  function isEmptyValue(v) {
-    return !String(v == null ? "" : v).trim();
-  }
-
-  function looksLikeEmailField(el) {
-    if (!el) return false;
-    var t = (el.getAttribute("type") || "").toLowerCase();
-    if (t === "email") return true;
-    if (el.id === "id13") return true;
-    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
-    return false;
-  }
-
-  function isValidEmail(v) {
-    var s = String(v || "").trim();
-    if (!s) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-  }
-
-  function getPlansContainer() {
-    return (
-      document.querySelector("section.plans") ||
-      document.querySelector(".plans") ||
-      document.querySelector("section[aria-label='Plans']") ||
-      document.querySelector("section[aria-label*='Plan']") ||
-      document.querySelector("[data-section='plans']") ||
-      document.querySelector("[data-plans]") ||
-      null
-    );
   }
 
   (function () {
@@ -236,18 +309,15 @@
         }
 
         if (form && typeof form.requestSubmit === "function") {
-          console.warn("[BNP SafeSubmit] Intercepted form.submit(); using requestSubmit() instead.");
           return form.requestSubmit();
         }
 
         var btn = findRealSubmitButton(form);
         if (btn) {
-          console.warn("[BNP SafeSubmit] Intercepted form.submit(); clicking submit button instead.");
           btn.click();
           return;
         }
 
-        console.warn("[BNP SafeSubmit] No requestSubmit/button found; falling back to native submit().");
         return nativeSubmit.call(form);
       } catch (e) {
         try { return nativeSubmit.call(this); } catch (e2) {}
@@ -268,10 +338,7 @@
 
       var zipLabel = document.querySelector('label[for="id9"]');
       var zipLabelText = (zipLabel && (zipLabel.textContent || "")).toLowerCase();
-      if (zipLabelText && zipLabelText.indexOf("zip") === -1 && zipLabelText.indexOf("postal") === -1) {
-        console.warn("[ZIP] id9 label does not look like ZIP/Postal; skipping ZIP helper.");
-        return;
-      }
+      if (zipLabelText && zipLabelText.indexOf("zip") === -1 && zipLabelText.indexOf("postal") === -1) return;
 
       var stateCodeToLabel = {
         "AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia",
@@ -326,9 +393,7 @@
 
             if (stateCode) setStateByCode(stateCode);
           })
-          .catch(function (err) {
-            console.warn("[ZIP] Lookup failed:", err);
-          });
+          .catch(function () {});
       }
 
       function readZipDigits() {
@@ -337,10 +402,7 @@
 
       zipInput.addEventListener("input", function () {
         var v = readZipDigits();
-        if (v.length < 5) {
-          lastZipLookedUp = "";
-          return;
-        }
+        if (v.length < 5) { lastZipLookedUp = ""; return; }
         if (v.length === 5) lookupZip(v);
       });
 
@@ -363,9 +425,7 @@
 
       function matchesHotkey(e) {
         if (e.code !== "Period") return false;
-        var ctrl = e.ctrlKey === true;
-        var shiftOrAlt = e.shiftKey === true || e.altKey === true;
-        return ctrl && shiftOrAlt;
+        return e.ctrlKey === true && (e.shiftKey === true || e.altKey === true);
       }
 
       function toggleHidden(id) {
@@ -379,7 +439,6 @@
         e.preventDefault();
         toggleHidden("content2");
         toggleHidden("content3");
-        console.log("[Hotkey] Toggled #content2/#content3");
       }, true);
     });
   })();
@@ -681,7 +740,6 @@
 
         if (mergedTokens.length === 0) {
           setStateLabel(toggleEl);
-          console.warn("[NL Sync] No identifiable title/alt/id for toggle", toggleEl);
           return;
         }
 
@@ -696,7 +754,6 @@
         var accept = bestScore >= 0.28 || (mergedTokens.length <= 2 && bestScore >= 0.2);
         if (!accept || bestIdx === -1) {
           setStateLabel(toggleEl);
-          console.warn("[NL Sync] No hidden input matched for:", h4Text || idGuess, "bestScore=", bestScore.toFixed(3));
           return;
         }
 
@@ -817,7 +874,7 @@
           childList: true,
           subtree: true,
           attributes: true,
-          attributeFilter: ["style", "class"]
+          attributeFilter: ["style", "class", "hidden"]
         });
       }
 
@@ -871,24 +928,6 @@
       document.head.appendChild(el);
     }
 
-    function measureText(t, refEl) {
-      var probe = document.createElement("span");
-      var cs = window.getComputedStyle(refEl);
-      probe.textContent = t;
-      probe.style.position = "absolute";
-      probe.style.visibility = "hidden";
-      probe.style.whiteSpace = "nowrap";
-      probe.style.fontFamily = cs.fontFamily;
-      probe.style.fontSize = cs.fontSize;
-      probe.style.fontWeight = cs.fontWeight;
-      probe.style.letterSpacing = cs.letterSpacing;
-      probe.style.lineHeight = "1";
-      document.body.appendChild(probe);
-      var w = Math.ceil(probe.getBoundingClientRect().width);
-      document.body.removeChild(probe);
-      return w;
-    }
-
     function ensureInnerLane(cta) {
       var existing = cta.querySelector(".nl-cta-inner");
       if (existing) return existing;
@@ -924,27 +963,6 @@
       }
     }
 
-    function layoutCTA(cta) {
-      var inner = cta.querySelector(".nl-cta-inner") || ensureInnerLane(cta);
-      var label = inner.querySelector(".label");
-      var state = inner.querySelector(".state");
-      var track = inner.querySelector(".track");
-      if (!label || !state || !track) return;
-
-      var maxState = Math.max(measureText("On", state), measureText("Off", state));
-      state.style.display = "inline-block";
-      state.style.width = (maxState + 2) + "px";
-
-      var labelW = Math.ceil(label.getBoundingClientRect().width);
-      var lane = labelW + 10 + 36 + 10 + (maxState + 2);
-      inner.style.width = lane + "px";
-      inner.style.maxWidth = lane + "px";
-
-      track.style.width = "36px";
-      track.style.height = "20px";
-      track.style.overflow = "hidden";
-    }
-
     function applyMode() {
       var isMobile = window.innerWidth <= MOBILE_MAX;
       var ready = hasPlanSelected();
@@ -958,7 +976,6 @@
           compactCard(card);
           if (ready) {
             showInline(cta);
-            layoutCTA(cta);
           } else {
             hideEl(cta);
           }
@@ -1425,9 +1442,7 @@
         CACHE.period = currentPeriod();
         CACHE.rates = bestRatesNow();
         if (CACHE.rates) applyRatesToTiles(CACHE.rates);
-      } catch (e) {
-        console.warn("applyPricesNow error:", e);
-      }
+      } catch (e) {}
     }
 
     function initCountryListener() {
@@ -1550,25 +1565,6 @@
 
       if (annualBtn) annualBtn.addEventListener("click", function () { setPeriod("yearly"); });
       if (monthlyBtn) monthlyBtn.addEventListener("click", function () { setPeriod("monthly"); });
-
-      var prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-      if (!prefersReduced && "IntersectionObserver" in window) {
-        var obs = new IntersectionObserver(function (entries, io) {
-          entries.forEach(function (e) {
-            if (e.isIntersecting) {
-              e.target.classList.add("in");
-              io.unobserve(e.target);
-            }
-          });
-        }, { threshold: 0.08 });
-
-        var plansContainer = getPlansContainer();
-        if (plansContainer) $all(".card.reveal, .card", plansContainer).forEach(function (el) { obs.observe(el); });
-      } else {
-        var plansContainer2 = getPlansContainer();
-        if (plansContainer2) $all(".card", plansContainer2).forEach(function (el) { el.classList.add("in"); });
-      }
 
       var y = document.getElementById("year");
       if (y) y.textContent = new Date().getFullYear();
@@ -1907,11 +1903,9 @@
 
         if (kind === "fan") {
           clearAllRateRadios();
-
           setNewsAndWeekly(true, false);
           setAchRequestedVersion("digital");
           setWeeklyRequestedVersion(false);
-
           CACHE.product = null;
           if (typeof window.__FORCE_CART_SYNC === "function") window.__FORCE_CART_SYNC();
           return;
@@ -1941,14 +1935,18 @@
       var backdrop = document.getElementById("modal-backdrop");
 
       if (!plans || !content1 || !content6) {
-        if (window.__BNP_FLOW_WIZ_RETRY < 20) {
+        if (window.__BNP_FLOW_WIZ_RETRY < 40) {
           window.__BNP_FLOW_WIZ_RETRY++;
-          setTimeout(setupFlowWizard, 150);
+          setTimeout(setupFlowWizard, 125);
         }
         return;
       }
 
       function forceShowPlansHard() {
+        try {
+          if (typeof window.__BNP_REVIVE_TILES__ === "function") window.__BNP_REVIVE_TILES__();
+        } catch (e) {}
+
         var anyStepOpen =
           (newsletters && isVisible(newsletters)) ||
           (content1 && isVisible(content1)) ||
@@ -1962,8 +1960,11 @@
             hero.style.removeProperty("display");
             hero.style.removeProperty("visibility");
             hero.style.removeProperty("opacity");
+            hero.hidden = false;
+            hero.removeAttribute("hidden");
             if (getComputedStyle(hero).display === "none") hero.style.setProperty("display", "block", "important");
           }
+
           if (plans) {
             plans.style.removeProperty("display");
             plans.style.removeProperty("visibility");
@@ -1972,26 +1973,38 @@
             plans.removeAttribute("hidden");
             if (getComputedStyle(plans).display === "none") plans.style.setProperty("display", "block", "important");
           }
+
           if (compare) {
             compare.style.removeProperty("display");
             compare.style.removeProperty("visibility");
             compare.style.removeProperty("opacity");
+            compare.hidden = false;
+            compare.removeAttribute("hidden");
             if (getComputedStyle(compare).display === "none") compare.style.setProperty("display", "block", "important");
           }
+
           if (faq) {
             faq.style.removeProperty("display");
             faq.style.removeProperty("visibility");
             faq.style.removeProperty("opacity");
+            faq.hidden = false;
+            faq.removeAttribute("hidden");
           }
+
           if (promoBar) {
             promoBar.style.removeProperty("display");
             promoBar.style.removeProperty("visibility");
             promoBar.style.removeProperty("opacity");
+            promoBar.hidden = false;
+            promoBar.removeAttribute("hidden");
           }
+
           if (promoToggle) {
             promoToggle.style.removeProperty("display");
             promoToggle.style.removeProperty("visibility");
             promoToggle.style.removeProperty("opacity");
+            promoToggle.hidden = false;
+            promoToggle.removeAttribute("hidden");
           }
 
           document.documentElement.classList.remove("payment-open");
@@ -2015,16 +2028,8 @@
           root.querySelector('button[type="submit"], input[type="submit"]') ||
           form.querySelector('button[type="submit"], input[type="submit"]');
 
-        if (btn) {
-          try { btn.click(); } catch (e) {}
-          return;
-        }
-
-        if (form.requestSubmit) {
-          try { form.requestSubmit(); } catch (e) {}
-          return;
-        }
-
+        if (btn) { try { btn.click(); } catch (e) {} return; }
+        if (form.requestSubmit) { try { form.requestSubmit(); } catch (e) {} return; }
         try { form.submit(); } catch (e) {}
       }
 
@@ -2153,6 +2158,7 @@
       function updateButtons() {
         if (step === "plans") {
           hide(actions);
+          forceShowPlansHard();
           return;
         }
         show(actions);
@@ -2349,27 +2355,6 @@
         }
       });
 
-      (function attachNewslettersInlineNext() {
-        if (!newsletters) return;
-        var NEXT_SEL =
-          '[data-step-next],[data-action="next"],.btn-next,.next,.wizard-next,a[href="#next"],button[type="submit"],[type="submit"]';
-
-        newsletters.addEventListener("click", function (e) {
-          var btn = e.target && e.target.closest && e.target.closest(NEXT_SEL);
-          if (!btn || step !== "newsletters") return;
-          e.preventDefault();
-          e.stopPropagation();
-          goToContent1();
-        });
-
-        newsletters.addEventListener("keydown", function (e) {
-          if (step === "newsletters" && e.key === "Enter") {
-            e.preventDefault();
-            goToContent1();
-          }
-        }, true);
-      })();
-
       var planCards = $all(".card, article", plans);
       planCards.forEach(function (card) {
         if (card.dataset.__flowTileBound === "1") return;
@@ -2417,9 +2402,10 @@
       setTimeout(forceShowPlansHard, 120);
       setTimeout(forceShowPlansHard, 300);
       setTimeout(forceShowPlansHard, 700);
+      setTimeout(forceShowPlansHard, 1200);
 
       if (window.MutationObserver) {
-        var mo = new MutationObserver(debounce(forceShowPlansHard, 80));
+        var mo = new MutationObserver(debounce(forceShowPlansHard, 60));
         mo.observe(document.documentElement, { attributes: true, subtree: true, childList: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"] });
       }
     }
@@ -2799,53 +2785,9 @@
       });
     }
 
-    function onceWhenShownScroll() {
-      if (!window.MutationObserver) return;
-
-      var targets = ["#content1", "#content4"].map(function (s) { return Q(s); }).filter(Boolean);
-      if (!targets.length) return;
-
-      var was = new WeakMap();
-
-      function isShown(el) {
-        return !!el && el.offsetParent !== null && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden";
-      }
-
-      function findScrollParent(n) {
-        for (var cur = n && n.parentElement; cur; cur = cur.parentElement) {
-          var s = getComputedStyle(cur);
-          if ((s.overflowY === "auto" || s.overflowY === "scroll") && cur.scrollHeight > cur.clientHeight) return cur;
-        }
-        return null;
-      }
-
-      function snap(el) {
-        try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
-        var scp = findScrollParent(el);
-        if (scp) try { scp.scrollTop = 0; } catch (e) {}
-
-        setTimeout(function () {
-          try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
-          if (scp) try { scp.scrollTop = 0; } catch (e) {}
-        }, 60);
-      }
-
-      var mo = new MutationObserver(function () {
-        targets.forEach(function (t) {
-          var vis = isShown(t);
-          var prev = was.get(t) || false;
-          if (vis && !prev) snap(t);
-          was.set(t, vis);
-        });
-      });
-
-      mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
-    }
-
     function init() {
       watchInputs();
       watchPricingBlocks();
-      onceWhenShownScroll();
 
       window.__FORCE_CART_SYNC = burstSync;
       burstSync();
