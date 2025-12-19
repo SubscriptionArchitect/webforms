@@ -1,7 +1,9 @@
 /* =====================================================================================
-NEWS PRO SITE MASTER SCRIPT (REQUIRED LOGIC REMOVED)
-Brandon Decker | UX LAB
+NEWS PRO SITE MASTER SCRIPT
+Brandon Decker
+UX LAB
 Updated: 12/17/2025
+
 ===================================================================================== */
 
 (function () {
@@ -39,22 +41,9 @@ Updated: 12/17/2025
   function isFieldVisible(el) {
     if (!el) return false;
     if (el.type === "hidden") return false;
-    if (el.disabled) return false;
-
-    // if any parent is hidden, treat as hidden
-    var p = el;
-    while (p && p !== document.body) {
-      var pcs = getComputedStyle(p);
-      if (pcs.display === "none" || pcs.visibility === "hidden") return false;
-      p = p.parentElement;
-    }
-
     var cs = getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") {
-      var r = el.getBoundingClientRect();
-      if ((r.width === 0 && r.height === 0)) return false;
-    }
+    if (el.offsetParent === null && cs.position !== "fixed") return false;
     return true;
   }
   function debounce(fn, ms) {
@@ -64,25 +53,6 @@ Updated: 12/17/2025
       clearTimeout(t);
       t = setTimeout(function () { fn.apply(null, args); }, ms);
     };
-  }
-
-  function isEmptyValue(v) {
-    return !String(v == null ? "" : v).trim();
-  }
-
-  function looksLikeEmailField(el) {
-    if (!el) return false;
-    var t = (el.getAttribute("type") || "").toLowerCase();
-    if (t === "email") return true;
-    if (el.id === "id13") return true;
-    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
-    return false;
-  }
-
-  function isValidEmail(v) {
-    var s = String(v || "").trim();
-    if (!s) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   }
 
   /* ============================================================
@@ -106,7 +76,7 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION A — PAYMENT-SAFE SUBMIT GUARD (ORIGINAL)
+     SECTION A — PAYMENT-SAFE SUBMIT GUUARD (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__SAFE_SUBMIT_GUARD__) return;
@@ -156,16 +126,16 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION B — ZIP / CITY / STATE FAIL-SAFE (PATCHED: DO NOT HIDE REQUIRED FIELDS)
+     SECTION B — ZIP / CITY / STATE FAIL-SAFE (ORIGINAL)
      ============================================================ */
   (function () {
     if (BNP.__ZIP_HELPER__) return;
     BNP.__ZIP_HELPER__ = true;
 
     onReady(function () {
-      var zipInput = document.getElementById("id9");  // Zip/Postal
-      var cityInput = document.getElementById("id6"); // City
-      var stateSelect = document.getElementById("id8"); // State/Province
+      var zipInput = document.getElementById("id9"); // Zip/Postal
+      var cityInput = document.getElementById("id6"); // City (hidden)
+      var stateSelect = document.getElementById("id8"); // State/Province (hidden)
 
       if (!zipInput || !cityInput || !stateSelect) return;
 
@@ -176,13 +146,79 @@ Updated: 12/17/2025
         return;
       }
 
+      function tweakLabel(labelSelector) {
+        var labelEl = document.querySelector(labelSelector);
+        if (!labelEl) return;
+
+        var stars = labelEl.querySelectorAll(".req-star");
+        stars.forEach(function (s) { s.remove(); });
+
+        var baseText = (labelEl.textContent || "").replace("*", "").trim().replace(/:$/, "");
+        labelEl.textContent = baseText + ":";
+      }
+
+      tweakLabel("#p6 .questionlabel label"); // City label
+      tweakLabel("#p8 .questionlabel label"); // State/Province label
+
       var stateCodeToLabel = {
-        "AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia",
-        "FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine",
-        "MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire",
-        "NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island",
-        "SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VI":"Virgin Islands","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"
+        "AL": "Alabama","AK": "Alaska","AZ": "Arizona","AR": "Arkansas","CA": "California","CO": "Colorado","CT": "Connecticut","DE": "Delaware","DC": "District of Columbia",
+        "FL": "Florida","GA": "Georgia","HI": "Hawaii","ID": "Idaho","IL": "Illinois","IN": "Indiana","IA": "Iowa","KS": "Kansas","KY": "Kentucky","LA": "Louisiana","ME": "Maine",
+        "MD": "Maryland","MA": "Massachusetts","MI": "Michigan","MN": "Minnesota","MS": "Mississippi","MO": "Missouri","MT": "Montana","NE": "Nebraska","NV": "Nevada","NH": "New Hampshire",
+        "NJ": "New Jersey","NM": "New Mexico","NY": "New York","NC": "North Carolina","ND": "North Dakota","OH": "Ohio","OK": "Oklahoma","OR": "Oregon","PA": "Pennsylvania","RI": "Rhode Island",
+        "SC": "South Carolina","SD": "South Dakota","TN": "Tennessee","TX": "Texas","UT": "Utah","VT": "Vermont","VI": "Virgin Islands","VA": "Virginia","WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
       };
+
+      var cityDisplay = document.createElement("span");
+      cityDisplay.id = "cityDisplayText";
+      cityDisplay.className = "address-display-text";
+      cityDisplay.style.display = "none";
+      cityDisplay.style.minHeight = "1.5em";
+      cityDisplay.style.fontSize = "inherit";
+      cityDisplay.style.fontWeight = "600";
+      cityDisplay.style.marginLeft = "4px";
+
+      var stateDisplay = document.createElement("span");
+      stateDisplay.id = "stateDisplayText";
+      stateDisplay.className = "address-display-text";
+      stateDisplay.style.display = "none";
+      stateDisplay.style.minHeight = "1.5em";
+      stateDisplay.style.fontSize = "inherit";
+      stateDisplay.style.fontWeight = "600";
+      stateDisplay.style.marginLeft = "4px";
+
+      var cityParent = cityInput.parentNode;
+      var stateParent = stateSelect.parentNode;
+
+      if (cityParent && !document.getElementById("cityDisplayText")) cityParent.appendChild(cityDisplay);
+      if (stateParent && !document.getElementById("stateDisplayText")) stateParent.appendChild(stateDisplay);
+
+      function syncCityDisplay() { cityDisplay.textContent = cityInput.value || ""; }
+      function syncStateDisplay() {
+        var idx = stateSelect.selectedIndex;
+        var opt = idx >= 0 ? stateSelect.options[idx] : null;
+        stateDisplay.textContent = (opt && opt.text) ? opt.text : "";
+      }
+
+      function applyCityStateVisibility() {
+        var hasCity = !!(cityInput.value || "").trim();
+        var hasState = !!(stateSelect.value || "").trim();
+
+        if (hasCity) {
+          cityDisplay.style.display = "inline-block";
+          cityInput.style.display = "none";
+        } else {
+          cityDisplay.style.display = "none";
+          cityInput.style.display = "";
+        }
+
+        if (hasState) {
+          stateDisplay.style.display = "inline-block";
+          stateSelect.style.display = "none";
+        } else {
+          stateDisplay.style.display = "none";
+          stateSelect.style.display = "";
+        }
+      }
 
       function setStateByCode(stateCode) {
         var label = stateCodeToLabel[stateCode];
@@ -199,7 +235,14 @@ Updated: 12/17/2025
             break;
           }
         }
+
+        syncStateDisplay();
+        applyCityStateVisibility();
       }
+
+      syncCityDisplay();
+      syncStateDisplay();
+      applyCityStateVisibility();
 
       var lastZipLookedUp = "";
 
@@ -225,12 +268,17 @@ Updated: 12/17/2025
               cityInput.value = city;
               cityInput.dispatchEvent(new Event("input", { bubbles: true }));
               cityInput.dispatchEvent(new Event("change", { bubbles: true }));
+              syncCityDisplay();
             }
 
             if (stateCode) setStateByCode(stateCode);
+            else syncStateDisplay();
+
+            applyCityStateVisibility();
           })
           .catch(function (err) {
             console.warn("[ZIP] Lookup failed:", err);
+            applyCityStateVisibility();
           });
       }
 
@@ -242,6 +290,7 @@ Updated: 12/17/2025
         var v = readZipDigits();
         if (v.length < 5) {
           lastZipLookedUp = "";
+          applyCityStateVisibility();
           return;
         }
         if (v.length === 5) lookupZip(v);
@@ -250,6 +299,15 @@ Updated: 12/17/2025
       zipInput.addEventListener("blur", function () {
         var v = readZipDigits();
         if (v.length === 5) lookupZip(v);
+      });
+
+      cityInput.addEventListener("input", function () {
+        syncCityDisplay();
+        applyCityStateVisibility();
+      });
+      stateSelect.addEventListener("change", function () {
+        syncStateDisplay();
+        applyCityStateVisibility();
       });
     });
   })();
@@ -1094,7 +1152,6 @@ Updated: 12/17/2025
 
   /* ============================================================
      SECTION M — FULL SUBSCRIBE + PRICING ORCHESTRATOR (NO GEO)
-     (REQUIRED LOGIC REMOVED) + VISIBILITY HARDENING FOR TILES
      ============================================================ */
   (function () {
     if (BNP.__ORCH1__) return;
@@ -1116,21 +1173,14 @@ Updated: 12/17/2025
     function show(el) {
       if (!el) return;
 
-      try { el.hidden = false; } catch (e) {}
-      try { el.style.visibility = "visible"; } catch (e) {}
-      try { el.style.opacity = "1"; } catch (e) {}
-      try { el.style.pointerEvents = "auto"; } catch (e) {}
-
       var prev = el.dataset && el.dataset.__prevDisplay;
       if (prev && prev !== "none") {
         el.style.display = prev;
-        if (getComputedStyle(el).display === "none") el.style.display = "block";
         return;
       }
 
       if (el.matches("section.plans, section.compare, section.hero")) {
         el.style.removeProperty("display");
-        if (getComputedStyle(el).display === "none") el.style.display = "block";
         return;
       }
 
@@ -1146,37 +1196,387 @@ Updated: 12/17/2025
       if (getComputedStyle(el).display === "none") el.style.display = "block";
     }
 
-    function forceShowPlansNow() {
-      var plans = document.querySelector("section.plans[aria-label='Plans'], section.plans");
-      if (!plans) return;
-
-      try { plans.hidden = false; } catch (e) {}
-      plans.style.display = "block";
-      plans.style.visibility = "visible";
-      plans.style.opacity = "1";
-      plans.style.pointerEvents = "auto";
-
-      var cards = plans.querySelectorAll(".card, article");
-      cards.forEach(function (c) {
-        if (!c) return;
-        try { c.hidden = false; } catch (e) {}
-        c.style.removeProperty("display");
-        c.style.visibility = "visible";
-        c.style.opacity = "1";
-        c.style.pointerEvents = "auto";
-        if (getComputedStyle(c).display === "none") c.style.display = "block";
-      });
-    }
-
     function scrollToHeaderNow() {
       try { window.scrollTo({ top: 0, behavior: "auto" }); } catch (e) {}
     }
 
-    // REQUIRED LOGIC REMOVED (NO-OPS)
-    function enforceRequiredNow() {}
-    function prepareStepValidation() {}
-    function stepIsValidSimple() { return true; }
-    function validateStep() { return { ok: true }; }
+    // ---------- STRONG REQUIRED VALIDATION (UPGRADED: stars + inline errors + supports Next gating) ----------
+    function ensureValidationStyles() {
+      if (document.getElementById("bnp-required-style")) return;
+      var s = document.createElement("style");
+      s.id = "bnp-required-style";
+      s.textContent = `
+        .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
+        .bnp-invalid input, .bnp-invalid select, .bnp-invalid textarea { border-color: #b00000 !important; }
+
+        .bnp-inline-error {
+          display:none;
+          margin-top:6px;
+          font-size:12px;
+          line-height:1.35;
+          color:#b00000;
+          font-weight:600;
+        }
+        .bnp-inline-error.is-on { display:block; }
+
+        .req-star, .reqStar, .required-star, .bnp-req-star {
+          display:inline !important;
+          color:#b00000 !important;
+          font-weight:700 !important;
+          margin-left:4px !important;
+        }
+
+        .nl-actions .btn[disabled]{
+          opacity:.45 !important;
+          cursor:not-allowed !important;
+          pointer-events:none !important;
+          filter:grayscale(0.2);
+        }
+      `;
+      document.head.appendChild(s);
+    }
+
+    function clearInvalidMarks(stepRoot) {
+      if (!stepRoot) return;
+      $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
+      $all(".bnp-inline-error", stepRoot).forEach(function (e) {
+        e.classList.remove("is-on");
+        e.textContent = "";
+      });
+      $all("input,select,textarea", stepRoot).forEach(function (el) {
+        try { el.removeAttribute("aria-invalid"); } catch (e) {}
+      });
+    }
+
+    function closestQuestionBlock(el, stepRoot) {
+      if (!el) return null;
+      return (
+        el.closest("p[id^='p']") ||
+        el.closest(".drg-element") ||
+        el.closest(".form-group") ||
+        el.closest(".question") ||
+        (stepRoot || document).querySelector("p[id^='p']")
+      );
+    }
+
+    function getLabelForField(field, scope) {
+      if (!field) return null;
+
+      if (field.id) {
+        var lbl = (scope || document).querySelector("label[for='" + field.id + "']");
+        if (lbl) return lbl;
+        lbl = document.querySelector("label[for='" + field.id + "']");
+        if (lbl) return lbl;
+      }
+
+      var wrapped = field.closest && field.closest("label");
+      if (wrapped) return wrapped;
+
+      var block = closestQuestionBlock(field, scope);
+      if (block) {
+        var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
+        if (ql) return ql;
+      }
+
+      return null;
+    }
+
+    function ensureReqStarOnLabel(labelEl) {
+      if (!labelEl) return;
+      if (labelEl.querySelector(".req-star, .reqStar, .required-star, .bnp-req-star")) return;
+
+      var star = document.createElement("span");
+      star.className = "bnp-req-star";
+      star.textContent = "*";
+      labelEl.appendChild(star);
+    }
+
+    function isEmptyValue(v) {
+      return !String(v == null ? "" : v).trim();
+    }
+
+    function isRequiredLike(field, block) {
+      if (!field) return false;
+
+      if (field.required) return true;
+      if ((field.getAttribute && field.getAttribute("aria-required")) === "true") return true;
+
+      if (block) {
+        if (block.querySelector(".req-star, .reqStar, .required-star")) return true;
+
+        var ql = block.querySelector(".questionlabel") || null;
+        var qText = ql ? (text(ql) || "").toLowerCase() : "";
+        if (qText && qText.indexOf("*") !== -1) return true;
+
+        if (block.classList && (block.classList.contains("required") || block.classList.contains("req"))) return true;
+        if (block.getAttribute && (block.getAttribute("data-required") === "true" || block.getAttribute("aria-required") === "true")) return true;
+      }
+
+      return false;
+    }
+
+    function ensureInlineError(block) {
+      if (!block) return null;
+      var e = block.querySelector(".bnp-inline-error");
+      if (e) return e;
+
+      e = document.createElement("div");
+      e.className = "bnp-inline-error";
+      block.appendChild(e);
+      return e;
+    }
+
+    function markRequiredIndicators(stepRoot) {
+      if (!stepRoot) return;
+
+      var fields = $all("input, select, textarea", stepRoot).filter(function (f) {
+        if (!f || f.disabled) return false;
+        if (!isFieldVisible(f)) return false;
+        return true;
+      });
+
+      fields.forEach(function (f) {
+        var block = closestQuestionBlock(f, stepRoot);
+        if (!block) return;
+
+        // radio group representative
+        if (f.type === "radio" && f.name) {
+          var radios = $all("input[type='radio'][name='" + f.name.replace(/'/g, "\\'") + "']", stepRoot).filter(isFieldVisible);
+          if (!radios.length) return;
+          var rep = radios[0];
+          var b = closestQuestionBlock(rep, stepRoot) || block;
+          if (!isRequiredLike(rep, b)) return;
+          var lbl = b.querySelector(".questionlabel label") || getLabelForField(rep, stepRoot);
+          ensureReqStarOnLabel(lbl);
+          return;
+        }
+
+        // checkbox
+        if (f.type === "checkbox") {
+          if (!isRequiredLike(f, block)) return;
+          var lbl2 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
+          ensureReqStarOnLabel(lbl2);
+          return;
+        }
+
+        // text/select/etc
+        if (!isRequiredLike(f, block)) return;
+        var lbl3 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
+        ensureReqStarOnLabel(lbl3);
+      });
+    }
+
+    function collectRequiredBlocks(stepRoot) {
+      var blocks = [];
+      var seen = new Set();
+
+      // blocks containing req-star
+      $all(".req-star, .reqStar, .required-star", stepRoot).forEach(function (s) {
+        var b =
+          (s.closest && (s.closest("p[id^='p']") || s.closest(".drg-element") || s.closest(".form-group") || s.closest(".question"))) ||
+          null;
+        if (b && !seen.has(b)) { seen.add(b); blocks.push(b); }
+      });
+
+      // aria-required fields
+      $all("[aria-required='true']", stepRoot).forEach(function (f) {
+        var b2 = closestQuestionBlock(f, stepRoot);
+        if (b2 && !seen.has(b2)) { seen.add(b2); blocks.push(b2); }
+      });
+
+      // native [required] fields
+      $all("input[required], select[required], textarea[required]", stepRoot).forEach(function (f) {
+        var b3 = closestQuestionBlock(f, stepRoot);
+        if (b3 && !seen.has(b3)) { seen.add(b3); blocks.push(b3); }
+      });
+
+      // blocks explicitly flagged required
+      $all("[data-required='true'], .required", stepRoot).forEach(function (n) {
+        var b4 = n.closest ? (n.closest("p[id^='p']") || n.closest(".drg-element") || n.closest(".form-group") || n.closest(".question")) : null;
+        b4 = b4 || (n.matches && n.matches("p[id^='p'], .drg-element, .form-group, .question") ? n : null);
+        if (b4 && !seen.has(b4)) { seen.add(b4); blocks.push(b4); }
+      });
+
+      return blocks;
+    }
+
+    function validateQuestionBlock(block, stepRoot) {
+      if (!block) return { ok: true };
+
+      var fields = $all("input, select, textarea", block).filter(function (el) {
+        if (!el) return false;
+        if (!isFieldVisible(el)) return false;
+        if (el.disabled) return false;
+        if (el.type === "hidden") return false;
+        return true;
+      });
+
+      if (!fields.length) return { ok: true };
+
+      var anyRequiredLike = fields.some(function (f) { return isRequiredLike(f, block); });
+      if (!anyRequiredLike) return { ok: true };
+
+      // radios
+      var radios = fields.filter(function (f) { return f.type === "radio" && f.name; });
+      if (radios.length) {
+        var groupName = radios[0].name;
+        var group = $all("input[type='radio'][name='" + groupName.replace(/'/g, "\\'") + "']", stepRoot || document).filter(isFieldVisible);
+        var anyChecked = group.some(function (r) { return r.checked; });
+        return { ok: anyChecked, focusEl: (group[0] || radios[0] || null), msg: "Please choose an option." };
+      }
+
+      // checkboxes
+      var cbs = fields.filter(function (f) { return f.type === "checkbox"; });
+      if (cbs.length) {
+        var anyCbReq = cbs.some(function (c) { return isRequiredLike(c, block); });
+        if (!anyCbReq) return { ok: true };
+        var okCb = cbs.every(function (c) { return !isRequiredLike(c, block) || c.checked; });
+        return { ok: okCb, focusEl: (cbs[0] || null), msg: "Please check the box to continue." };
+      }
+
+      // text/select/etc
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (!isRequiredLike(f, block)) continue;
+
+        if (f.tagName === "SELECT") {
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+        } else if (
+          f.type === "email" || f.type === "text" || f.type === "tel" ||
+          f.type === "number" || f.type === "password" || f.tagName === "TEXTAREA"
+        ) {
+          if (isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+        } else {
+          if ("value" in f && isEmptyValue(f.value)) return { ok: false, focusEl: f, msg: "This field is required." };
+        }
+      }
+
+      return { ok: true };
+    }
+
+    function prepareStepValidation(stepId) {
+      ensureValidationStyles();
+      var root = document.getElementById(stepId);
+      if (!root) return;
+      markRequiredIndicators(root);
+    }
+
+    // Non-mutating validity check for Next gating (no messages/marks)
+    function stepIsValidSimple(stepId) {
+      var root = document.getElementById(stepId);
+      if (!root) return true;
+
+      var requiredFields = $all("input[required], select[required], textarea[required], [aria-required='true']", root).filter(function (el) {
+        if (!el || el.disabled) return false;
+        if (!isFieldVisible(el)) return false;
+        return true;
+      });
+
+      // native/aria required direct fields
+      for (var i = 0; i < requiredFields.length; i++) {
+        var el = requiredFields[i];
+        if (!el) continue;
+
+        if (el.type === "radio" && el.name) {
+          var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
+            .filter(isFieldVisible)
+            .some(function (r) { return r.checked; });
+          if (!any) return false;
+        } else if (el.type === "checkbox") {
+          if (!el.checked) return false;
+        } else {
+          if (isEmptyValue(el.value)) return false;
+        }
+      }
+
+      // required blocks detected via stars/etc
+      var blocks = collectRequiredBlocks(root);
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (!b || !isVisible(b)) continue;
+        var res = validateQuestionBlock(b, root);
+        if (!res.ok) return false;
+      }
+
+      return true;
+    }
+
+    // Mutating validation (shows errors + marks)
+    function validateStep(stepId) {
+      ensureValidationStyles();
+
+      var root = document.getElementById(stepId);
+      if (!root) return { ok: true };
+
+      // Ensure stars exist even if DF didn’t output them
+      markRequiredIndicators(root);
+
+      clearInvalidMarks(root);
+
+      // 1) Native HTML required attr pass
+      var required = $all("input[required], select[required], textarea[required]", root).filter(function (el) {
+        if (!el || el.disabled) return false;
+        if (!isFieldVisible(el)) return false;
+        return true;
+      });
+
+      for (var i = 0; i < required.length; i++) {
+        var el = required[i];
+
+        if (el.type === "radio" && el.name) {
+          var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
+            .filter(isFieldVisible)
+            .some(function (r) { return r.checked; });
+
+          if (!any) {
+            var b1 = closestQuestionBlock(el, root) || el;
+            if (b1 && b1.classList) b1.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e1 = ensureInlineError(b1);
+            if (e1) { e1.textContent = "Please choose an option."; e1.classList.add("is-on"); }
+            return { ok: false, focusEl: el };
+          }
+        } else if (el.type === "checkbox") {
+          if (!el.checked) {
+            var b2 = closestQuestionBlock(el, root) || el;
+            if (b2 && b2.classList) b2.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e2 = ensureInlineError(b2);
+            if (e2) { e2.textContent = "Please check the box to continue."; e2.classList.add("is-on"); }
+            return { ok: false, focusEl: el };
+          }
+        } else {
+          if (isEmptyValue(el.value)) {
+            var b3 = closestQuestionBlock(el, root) || el;
+            if (b3 && b3.classList) b3.classList.add("bnp-invalid");
+            try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
+            var e3 = ensureInlineError(b3);
+            if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
+            return { ok: false, focusEl: el };
+          }
+        }
+      }
+
+      // 2) Required-like blocks pass (stars/aria-required/etc)
+      var blocks = collectRequiredBlocks(root);
+      for (var j = 0; j < blocks.length; j++) {
+        var b = blocks[j];
+        if (!b || !isVisible(b)) continue;
+
+        var res = validateQuestionBlock(b, root);
+        if (!res.ok) {
+          if (b.classList) b.classList.add("bnp-invalid");
+          if (res.focusEl) {
+            try { res.focusEl.setAttribute("aria-invalid", "true"); } catch (e) {}
+          }
+          var ee = ensureInlineError(b);
+          if (ee) { ee.textContent = res.msg || "This field is required."; ee.classList.add("is-on"); }
+          return { ok: false, focusEl: res.focusEl || (b.querySelector("input,select,textarea") || b) };
+        }
+      }
+
+      return { ok: true };
+    }
 
     var COUNTRY_DROPDOWN_ID = "#id7";
     var WRAPPER_SELECTORS = [
@@ -1777,7 +2177,7 @@ Updated: 12/17/2025
       });
     }
 
-    /* --------- Yes/No set with ID-first, TEXT-fallback --------- */
+    /* --------- PATCH: Yes/No set with ID-first, TEXT-fallback --------- */
     function setYesNoByQuestionText(questionIncludes, yesOrNo) {
       var want = (yesOrNo || "").toLowerCase() === "yes" ? "yes" : "no";
       var qNeed = (questionIncludes || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -1835,8 +2235,12 @@ Updated: 12/17/2025
       var okNews = ensure(newsYes, newsYesR, newsNoR);
       var okWc = ensure(weeklyYes, wcYesR, wcNoR);
 
-      if (!okNews) setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
-      if (!okWc) setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
+      if (!okNews) {
+        setYesNoByQuestionText("subscription to the achr news", newsYes ? "yes" : "no");
+      }
+      if (!okWc) {
+        setYesNoByQuestionText("weekly chill", weeklyYes ? "yes" : "no");
+      }
     }
 
     function attachTileClickSelection() {
@@ -1866,11 +2270,14 @@ Updated: 12/17/2025
 
         var weeklyYes = (kind === "chill");
 
+        // Yes/No product questions
         if (weeklyYes) setNewsAndWeekly(false, true);
         else setNewsAndWeekly(true, false);
 
+        // Weekly Chill Requested Version:
         setWeeklyRequestedVersion(weeklyYes);
 
+        // ACHR Requested Version:
         if (weeklyYes) setAchRequestedVersion("do not want");
         else if (kind === "print") setAchRequestedVersion("print");
         else setAchRequestedVersion("digital");
@@ -1878,6 +2285,7 @@ Updated: 12/17/2025
         if (kind === "fan") {
           clearAllRateRadios();
 
+          // IMPORTANT: Free Fan Only tile -> ACHR requested version MUST be Digital
           setNewsAndWeekly(true, false);
           setAchRequestedVersion("digital");
           setWeeklyRequestedVersion(false);
@@ -1919,11 +2327,6 @@ Updated: 12/17/2025
         return;
       }
 
-      forceShowPlansNow();
-      show(hero);
-      show(plans);
-      show(compare);
-
       function submitViaNative(stepRoot) {
         var root = stepRoot || document;
         var form =
@@ -1954,6 +2357,7 @@ Updated: 12/17/2025
       actions.style.cssText =
         "display:flex;gap:12px;padding:12px;margin-top:24px;background:#fff;border-top:1px solid #e6e8ee;align-items:center";
 
+      // Center slot so Pay Now sits centered
       actions.innerHTML =
         '<button type="button" class="btn btn-back">Back</button>' +
         '<div class="bnp-action-center" style="flex:1;display:flex;justify-content:center;align-items:center;"></div>' +
@@ -1966,6 +2370,9 @@ Updated: 12/17/2025
         chosenKind = null,
         chosenFree = true,
         lastFocus = null;
+
+      // NEW: track whether user has attempted Next on each step (so we don't spam errors immediately)
+      var attempted = { content1: false, content4: false };
 
       function placeActions(stepEl) {
         var target = stepEl ? stepEl.querySelector(".flow-actions") : null;
@@ -2043,17 +2450,9 @@ Updated: 12/17/2025
 
         ensureSubmitDockCaptured(wrap);
 
-        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"], button:not([type])');
+        var realBtn = wrap.querySelector('input[type="submit"], button[type="submit"]');
         if (realBtn) {
-          // Force plain submit, no JS hijack
-          try { realBtn.removeAttribute("onclick"); } catch (e) {}
-          try { realBtn.onclick = null; } catch (e) {}
-          if (realBtn.tagName === "BUTTON") {
-            try { realBtn.setAttribute("type", "submit"); } catch (e) {}
-          }
-
           try { realBtn.value = "Pay Now"; } catch (e) {}
-          try { realBtn.textContent = "Pay Now"; } catch (e) {}
           stylePayNow(realBtn);
         }
 
@@ -2071,6 +2470,56 @@ Updated: 12/17/2025
 
         try { nextBtn.style.display = "none"; } catch (e) {}
         actions.dataset.__payInstalled = "1";
+      }
+
+      // NEW: Next gating (disable Next until required fields are complete)
+      function setNextDisabled(disabled) {
+        try { nextBtn.disabled = !!disabled; } catch (e) {}
+        try { nextBtn.setAttribute("aria-disabled", disabled ? "true" : "false"); } catch (e) {}
+      }
+
+      var __nextGateRAF = null;
+      function gateNextForCurrentStep() {
+        if (__nextGateRAF) cancelAnimationFrame(__nextGateRAF);
+        __nextGateRAF = requestAnimationFrame(function () {
+          if (step === "content1") {
+            prepareStepValidation("content1");
+            if (attempted.content1) {
+              var r1 = validateStep("content1");
+              setNextDisabled(!r1.ok);
+            } else {
+              setNextDisabled(!stepIsValidSimple("content1"));
+            }
+          } else if (step === "content4") {
+            prepareStepValidation("content4");
+            if (attempted.content4) {
+              var r4 = validateStep("content4");
+              setNextDisabled(!r4.ok);
+            } else {
+              setNextDisabled(!stepIsValidSimple("content4"));
+            }
+          } else {
+            setNextDisabled(false);
+          }
+        });
+      }
+
+      function wireLiveValidation(stepRootId) {
+        var root = document.getElementById(stepRootId);
+        if (!root || root.dataset.__bnpLiveVal === "1") return;
+        root.dataset.__bnpLiveVal = "1";
+
+        var bump = debounce(function () {
+          // only show inline errors live after user attempted Next on that step
+          if (step === stepRootId && ((stepRootId === "content1" && attempted.content1) || (stepRootId === "content4" && attempted.content4))) {
+            validateStep(stepRootId);
+          }
+          gateNextForCurrentStep();
+        }, 140);
+
+        root.addEventListener("input", bump, true);
+        root.addEventListener("change", bump, true);
+        root.addEventListener("blur", bump, true);
       }
 
       function updateButtons() {
@@ -2091,6 +2540,11 @@ Updated: 12/17/2025
         if (step === "newsletters" || step === "content1") nextBtn.textContent = "Next";
         else if (step === "content4") nextBtn.textContent = chosenFree ? "Subscribe" : "Next";
         else if (step === "content6") nextBtn.textContent = "Complete Payment";
+
+        // NEW: wire & gate
+        wireLiveValidation("content1");
+        wireLiveValidation("content4");
+        gateNextForCurrentStep();
       }
 
       function preloadPaymentStep() {
@@ -2165,6 +2619,9 @@ Updated: 12/17/2025
         show(content1);
         placeActions(content1);
 
+        attempted.content1 = false;
+        prepareStepValidation("content1");
+
         step = "content1";
         updateButtons();
         scrollToHeaderNow();
@@ -2174,6 +2631,9 @@ Updated: 12/17/2025
         hide(content1);
         if (content4) show(content4);
         if (content4) placeActions(content4);
+
+        attempted.content4 = false;
+        prepareStepValidation("content4");
 
         step = "content4";
         updateButtons();
@@ -2196,8 +2656,6 @@ Updated: 12/17/2025
         show(faq);
         show(promoBar);
         show(promoToggle);
-
-        forceShowPlansNow();
 
         if (newsletters) hide(newsletters);
         hide(content1);
@@ -2254,6 +2712,17 @@ Updated: 12/17/2025
         if (step === "newsletters") { goToContent1(); return; }
 
         if (step === "content1") {
+          var v1 = validateStep("content1");
+          if (!v1.ok) {
+            attempted.content1 = true;
+            gateNextForCurrentStep();
+            alert("Please complete all required Profile fields.");
+            try {
+              if (v1.focusEl && v1.focusEl.scrollIntoView) v1.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (v1.focusEl && v1.focusEl.focus) v1.focusEl.focus({ preventScroll: true });
+            } catch (e) {}
+            return;
+          }
           if (chosenFree) { submitViaNative(content1); return; }
           if (chosenKind === "print") goToContent4();
           else goToPayment();
@@ -2261,6 +2730,17 @@ Updated: 12/17/2025
         }
 
         if (step === "content4") {
+          var v4 = validateStep("content4");
+          if (!v4.ok) {
+            attempted.content4 = true;
+            gateNextForCurrentStep();
+            alert("Please complete all required Shipping fields.");
+            try {
+              if (v4.focusEl && v4.focusEl.scrollIntoView) v4.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (v4.focusEl && v4.focusEl.focus) v4.focusEl.focus({ preventScroll: true });
+            } catch (e) {}
+            return;
+          }
           if (chosenFree) submitViaNative(content4);
           else goToPayment();
           return;
@@ -2297,8 +2777,6 @@ Updated: 12/17/2025
         card.dataset.__flowTileBound = "1";
 
         card.addEventListener("click", function () {
-          forceShowPlansNow();
-
           $all("section.plans article.card.selected, section.plans article.selected").forEach(function (n) {
             n.classList.remove("selected");
           });
@@ -2320,8 +2798,6 @@ Updated: 12/17/2025
       show(promoBar);
       show(promoToggle);
 
-      forceShowPlansNow();
-
       if (newsletters) hide(newsletters);
       hide(content1);
       if (content4) hide(content4);
@@ -2333,9 +2809,6 @@ Updated: 12/17/2025
         var w = findOriginalPaymentSubmitWrapper();
         if (w) w.style.display = "none";
       } catch (e) {}
-
-      // Final safety: if any legacy markup references checkPayment, keep it harmless
-      if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
 
       step = "plans";
       updateButtons();
@@ -2349,14 +2822,7 @@ Updated: 12/17/2025
       attachTileClickSelection();
 
       applyPricesNow();
-
-      forceShowPlansNow();
       setupFlowWizard();
-
-      if (window.MutationObserver) {
-        var mo = new MutationObserver(debounce(forceShowPlansNow, 120));
-        mo.observe(document.documentElement, { attributes: true, childList: true, subtree: true, attributeFilter: ["style", "class", "hidden"] });
-      }
 
       document.addEventListener("click", function (e) {
         var btn = e.target && e.target.closest && e.target.closest("button.btn-next[type='button'], button.btn-next");
@@ -2463,7 +2929,7 @@ Updated: 12/17/2025
   })();
 
   /* ============================================================
-     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first) (ORIGINAL)
+     SECTION O — CART FORCE-SYNC (price ALWAYS from selected radio first)
      ============================================================ */
   (function () {
     if (BNP.__CART3__) return;
@@ -2627,7 +3093,6 @@ Updated: 12/17/2025
 
       if (!items.length && !totals.length) return;
 
-      // hard reset so we never duplicate
       items.forEach(function (el) { el.innerHTML = ""; });
 
       var total = 0;
@@ -3003,391 +3468,374 @@ Updated: 12/17/2025
 })();
 
 
-/* =====================================================================================
-SECONDARY SCRIPT — REQUIRED FIELDS ONLY (ADD THIS AFTER THE MASTER)
-===================================================================================== */
-
 (function () {
   "use strict";
-
-  if (!window.__BNP_MASTER__) window.__BNP_MASTER__ = {};
-  var BNP = window.__BNP_MASTER__;
-  if (BNP.__REQUIRED_ONLY__) return;
-  BNP.__REQUIRED_ONLY__ = true;
+  if (window.__BNP_MASTER_REQUIRED_V2) return;
+  window.__BNP_MASTER_REQUIRED_V2 = true;
 
   function onReady(fn) {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
     else fn();
   }
-  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-  function text(el) { return ((el && (el.innerText || el.textContent)) || "").trim(); }
+  function qs(root, sel) { return (root || document).querySelector(sel); }
+  function qsa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function trim(v) { return (v == null ? "" : String(v)).trim(); }
 
-  function isEmptyValue(v) { return !String(v == null ? "" : v).trim(); }
-
-  function looksLikeEmailField(el) {
+  function isVisible(el) {
     if (!el) return false;
-    var t = (el.getAttribute("type") || "").toLowerCase();
-    if (t === "email") return true;
-    if (el.id === "id13") return true;
-    if (/email/i.test(el.name || "") || /email/i.test(el.id || "")) return true;
-    return false;
-  }
-
-  function isValidEmail(v) {
-    var s = String(v || "").trim();
-    if (!s) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-  }
-
-  function isFieldVisible(el) {
-    if (!el) return false;
-    if (el.type === "hidden") return false;
     if (el.disabled) return false;
 
+    // Walk up: if any parent is display:none/visibility:hidden, treat as not visible
     var p = el;
     while (p && p !== document.body) {
-      var pcs = getComputedStyle(p);
+      var pcs = window.getComputedStyle(p);
       if (pcs.display === "none" || pcs.visibility === "hidden") return false;
       p = p.parentElement;
     }
 
-    var cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-    if (el.offsetParent === null && cs.position !== "fixed") {
+    var cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+
+    // If it's effectively not taking space and has no offsetParent, treat as hidden
+    if (el.offsetParent === null) {
       var r = el.getBoundingClientRect();
-      if ((r.width === 0 && r.height === 0)) return false;
+      if ((r.width === 0 && r.height === 0) || cs.position !== "fixed") return false;
     }
+
     return true;
   }
 
-  function isVisible(el) {
-    if (!el) return false;
-    var cs = getComputedStyle(el);
-    return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
+  function injectCss() {
+    if (document.getElementById("bnp-required-css")) return;
+    var css = ""
+      + ".bnp-invalid{border:2px solid #d71920 !important;box-shadow:0 0 0 2px rgba(215,25,32,.15) !important;}"
+      + ".bnp-error{margin:8px 0 0;font-size:12px !important;color:#d71920;font-weight:600;}"
+      + ".bnp-section-error{display:none;margin:10px 0 14px;padding:10px 12px;border:1px solid rgba(215,25,32,.35);"
+      + "background:rgba(215,25,32,.06);border-radius:8px;font-size:13px !important;color:#111;}"
+      + ".bnp-section-error strong{color:#d71920;}";
+    var style = document.createElement("style");
+    style.id = "bnp-required-css";
+    style.type = "text/css";
+    style.appendChild(document.createTextNode(css));
+    document.head.appendChild(style);
   }
 
-  function debounce(fn, ms) {
-    var t = null;
-    return function () {
-      var args = arguments;
-      clearTimeout(t);
-      t = setTimeout(function () { fn.apply(null, args); }, ms);
-    };
+  function ensureSectionErrorBox(section) {
+    if (!section) return null;
+    var box = section.querySelector(".bnp-section-error");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "bnp-section-error";
+      box.setAttribute("role", "alert");
+      var h2 = section.querySelector("h2");
+      if (h2) h2.insertAdjacentElement("afterend", box);
+      else section.insertAdjacentElement("afterbegin", box);
+    }
+    return box;
   }
 
-  function ensureStyles() {
-    if (document.getElementById("bnp-required-style")) return;
-    var s = document.createElement("style");
-    s.id = "bnp-required-style";
-    s.textContent = `
-      .bnp-invalid { outline: 2px solid rgba(180,0,0,.35) !important; outline-offset: 4px; border-radius: 6px; }
-      .bnp-inline-error {
-        display:none;
-        margin-top:6px;
-        font-size:12px;
-        line-height:1.35;
-        color:#b00000;
-        font-weight:600;
-      }
-      .bnp-inline-error.is-on { display:block; }
-      .bnp-req-star { display:inline !important; color:#b00000 !important; font-weight:700 !important; margin-left:4px !important; }
-    `;
-    document.head.appendChild(s);
-  }
-
-  function shouldExcludeRequired(field) {
-    if (!field) return true;
-    if (field.disabled) return true;
-    var type = (field.getAttribute("type") || "").toLowerCase();
-    if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return true;
-
-    // Exclusions: Cell phone + sms opt-in blocks/ids
-    if (field.closest && field.closest("#p124, #ps3")) return true;
-    if (field.id === "id124" || field.id === "id974" || field.id === "id124_ccc") return true;
-    if (field.id === "smss3") return true;
-
-    return false;
-  }
-
-  function setRequired(field, on) {
+  function setFieldRequired(field, required) {
     if (!field) return;
-    try {
-      if (on) {
-        field.setAttribute("aria-required", "true");
-        field.dataset.__bnpForcedReq = "1";
-        if (field.tagName === "INPUT" || field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
+    if (required) {
+      field.setAttribute("aria-required", "true");
+      field.dataset.bnpRequired = "1";
+      try {
+        if (field.tagName === "INPUT") {
+          var t = (field.getAttribute("type") || "").toLowerCase();
+          if (t !== "hidden" && t !== "button" && t !== "submit" && t !== "reset") field.required = true;
+        } else if (field.tagName === "SELECT" || field.tagName === "TEXTAREA") {
           field.required = true;
         }
-      } else {
-        if (field.dataset && field.dataset.__bnpForcedReq === "1") {
-          field.removeAttribute("aria-required");
-          try { field.required = false; } catch (e) {}
-          delete field.dataset.__bnpForcedReq;
-        }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    } else {
+      field.removeAttribute("aria-required");
+      delete field.dataset.bnpRequired;
+      try { field.required = false; } catch (e) {}
+    }
   }
 
-  function enforceRequiredForSection(sectionId) {
-    var section = document.getElementById(sectionId);
-    if (!section) return;
+  function clearFieldError(field) {
+    if (!field) return;
+    field.classList.remove("bnp-invalid");
+    var wrap = field.parentElement;
+    if (!wrap) return;
+    var err = wrap.querySelector(":scope > .bnp-error");
+    if (err) err.remove();
+  }
 
-    var fields = $all("input,select,textarea", section);
+  function showFieldError(field, msg) {
+    if (!field) return;
+    field.classList.add("bnp-invalid");
+    var wrap = field.parentElement;
+    if (!wrap) return;
+    var err = wrap.querySelector(":scope > .bnp-error");
+    if (!err) {
+      err = document.createElement("div");
+      err.className = "bnp-error";
+      wrap.appendChild(err);
+    }
+    err.textContent = msg || "Required";
+  }
+
+  function validateEmail(val) {
+    var v = trim(val);
+    if (!v) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+
+  // Collect fields that must be required for a given section:
+  // - Must be visible
+  // - Exclude phone + sms opt-in for Profile
+  function collectRequiredFields(section) {
+    var fields = qsa(section, "input, select, textarea");
+    var required = [];
     fields.forEach(function (f) {
-      if (shouldExcludeRequired(f)) { setRequired(f, false); return; }
-      if (isFieldVisible(f)) setRequired(f, true);
-      else setRequired(f, false);
-    });
+      var type = (f.getAttribute("type") || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "reset") return;
+      if (f.disabled) return;
+      if (!isVisible(f)) return;
 
-    if (sectionId === "content1") {
-      var email = document.getElementById("id13");
-      if (email && !shouldExcludeRequired(email) && isFieldVisible(email)) setRequired(email, true);
+      // Exclusions: Cell phone block + SMS opt-in (Profile)
+      if (f.closest("#p124, #ps3")) return;
+      if (f.id === "id124" || f.id === "id974" || f.id === "id124_ccc") return;
+      if (f.id === "smss3") return;
+
+      required.push(f);
+    });
+    return required;
+  }
+
+  function applyRequiredRules() {
+    var profile = document.getElementById("content1");
+    var ship = document.getElementById("content4");
+
+    if (profile) {
+      collectRequiredFields(profile).forEach(function (f) { setFieldRequired(f, true); });
+      var email = qs(profile, "#id13");
+      if (email) setFieldRequired(email, true);
+    }
+
+    if (ship) {
+      collectRequiredFields(ship).forEach(function (f) { setFieldRequired(f, true); });
     }
   }
 
-  function enforceRequiredNow() {
-    enforceRequiredForSection("content1");
-    enforceRequiredForSection("content4");
-  }
+  function validateSection(section) {
+    if (!section) return true;
 
-  function closestQuestionBlock(el) {
-    if (!el) return null;
-    return (
-      el.closest("p[id^='p']") ||
-      el.closest(".drg-element") ||
-      el.closest(".form-group") ||
-      el.closest(".question") ||
-      null
-    );
-  }
+    var box = ensureSectionErrorBox(section);
+    if (box) { box.style.display = "none"; box.textContent = ""; }
 
-  function getLabelForField(field, scope) {
-    if (!field) return null;
+    var required = collectRequiredFields(section);
+    var badCount = 0;
+    var firstBad = null;
 
-    if (field.id) {
-      var lbl = (scope || document).querySelector("label[for='" + field.id + "']");
-      if (lbl) return lbl;
-      lbl = document.querySelector("label[for='" + field.id + "']");
-      if (lbl) return lbl;
-    }
+    required.forEach(function (f) {
+      clearFieldError(f);
 
-    var wrapped = field.closest && field.closest("label");
-    if (wrapped) return wrapped;
-
-    var block = closestQuestionBlock(field);
-    if (block) {
-      var ql = block.querySelector(".questionlabel label") || block.querySelector("label");
-      if (ql) return ql;
-    }
-
-    return null;
-  }
-
-  function ensureReqStarOnLabel(labelEl) {
-    if (!labelEl) return;
-    if (labelEl.querySelector(".bnp-req-star")) return;
-    var star = document.createElement("span");
-    star.className = "bnp-req-star";
-    star.textContent = "*";
-    labelEl.appendChild(star);
-  }
-
-  function isRequiredLike(field, block) {
-    if (!field) return false;
-    if (field.required) return true;
-    if ((field.getAttribute && field.getAttribute("aria-required")) === "true") return true;
-
-    if (block) {
-      if (block.querySelector(".bnp-req-star")) return true;
-      if (block.classList && (block.classList.contains("required") || block.classList.contains("req"))) return true;
-      if (block.getAttribute && (block.getAttribute("data-required") === "true" || block.getAttribute("aria-required") === "true")) return true;
-    }
-    return false;
-  }
-
-  function ensureInlineError(block) {
-    if (!block) return null;
-    var e = block.querySelector(".bnp-inline-error");
-    if (e) return e;
-
-    e = document.createElement("div");
-    e.className = "bnp-inline-error";
-    block.appendChild(e);
-    return e;
-  }
-
-  function clearInvalidMarks(stepRoot) {
-    if (!stepRoot) return;
-    $all(".bnp-invalid", stepRoot).forEach(function (n) { n.classList.remove("bnp-invalid"); });
-    $all(".bnp-inline-error", stepRoot).forEach(function (e) {
-      e.classList.remove("is-on");
-      e.textContent = "";
-    });
-    $all("input,select,textarea", stepRoot).forEach(function (el) {
-      try { el.removeAttribute("aria-invalid"); } catch (e) {}
-    });
-  }
-
-  function markRequiredIndicators(stepRoot) {
-    if (!stepRoot) return;
-
-    var fields = $all("input, select, textarea", stepRoot).filter(function (f) {
-      if (!f || f.disabled) return false;
-      if (!isFieldVisible(f)) return false;
-      return true;
-    });
-
-    fields.forEach(function (f) {
-      var block = closestQuestionBlock(f);
-      if (!block) return;
-
-      if (f.type === "radio" && f.name) {
-        var radios = $all("input[type='radio'][name='" + f.name.replace(/'/g, "\\'") + "']", stepRoot).filter(isFieldVisible);
-        if (!radios.length) return;
-        var rep = radios[0];
-        var b = closestQuestionBlock(rep) || block;
-        if (!isRequiredLike(rep, b)) return;
-        var lbl = b.querySelector(".questionlabel label") || getLabelForField(rep, stepRoot);
-        ensureReqStarOnLabel(lbl);
+      var val = trim(f.value);
+      if (!val) {
+        badCount++;
+        if (!firstBad) firstBad = f;
+        showFieldError(f, "Required");
         return;
       }
 
-      if (!isRequiredLike(f, block)) return;
-      var lbl2 = block.querySelector(".questionlabel label") || getLabelForField(f, stepRoot);
-      ensureReqStarOnLabel(lbl2);
-    });
-  }
-
-  function validateStep(stepId) {
-    ensureStyles();
-    enforceRequiredNow();
-
-    var root = document.getElementById(stepId);
-    if (!root) return { ok: true };
-
-    markRequiredIndicators(root);
-    clearInvalidMarks(root);
-
-    var required = $all("input[required], select[required], textarea[required], [aria-required='true']", root).filter(function (el) {
-      if (!el || el.disabled) return false;
-      if (!isFieldVisible(el)) return false;
-      return true;
-    });
-
-    for (var i = 0; i < required.length; i++) {
-      var el = required[i];
-
-      if (el.type === "radio" && el.name) {
-        var any = $all("input[type='radio'][name='" + el.name.replace(/'/g, "\\'") + "']", root)
-          .filter(isFieldVisible)
-          .some(function (r) { return r.checked; });
-
-        if (!any) {
-          var b1 = closestQuestionBlock(el) || el;
-          if (b1 && b1.classList) b1.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e1 = ensureInlineError(b1);
-          if (e1) { e1.textContent = "Please choose an option."; e1.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-      } else if (el.type === "checkbox") {
-        if (!el.checked) {
-          var b2 = closestQuestionBlock(el) || el;
-          if (b2 && b2.classList) b2.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e2 = ensureInlineError(b2);
-          if (e2) { e2.textContent = "Please check the box to continue."; e2.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-      } else {
-        if (isEmptyValue(el.value)) {
-          var b3 = closestQuestionBlock(el) || el;
-          if (b3 && b3.classList) b3.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var e3 = ensureInlineError(b3);
-          if (e3) { e3.textContent = "This field is required."; e3.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
-        if (looksLikeEmailField(el) && !isValidEmail(el.value)) {
-          var bE = closestQuestionBlock(el) || el;
-          if (bE && bE.classList) bE.classList.add("bnp-invalid");
-          try { el.setAttribute("aria-invalid", "true"); } catch (e) {}
-          var eE = ensureInlineError(bE);
-          if (eE) { eE.textContent = "Enter a valid email address."; eE.classList.add("is-on"); }
-          return { ok: false, focusEl: el };
-        }
+      // Email format (covers id13 and any field that looks like email)
+      var looksEmail = (f.id === "id13") || /email/i.test(f.name || "") || /email/i.test(f.id || "");
+      if (looksEmail && !validateEmail(val)) {
+        badCount++;
+        if (!firstBad) firstBad = f;
+        showFieldError(f, "Enter a valid email address");
       }
+    });
+
+    if (badCount) {
+      if (box) {
+        box.innerHTML = "<strong>Please complete the required fields</strong> before continuing.";
+        box.style.display = "block";
+      }
+      try { firstBad.focus({ preventScroll: false }); } catch (e) {}
+      try { firstBad.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+      return false;
     }
 
-    return { ok: true };
+    return true;
   }
 
-  function currentVisibleStepId() {
-    var c6 = document.getElementById("content6");
-    if (c6 && isVisible(c6) && c6.classList.contains("modal-open")) return "content6";
-
-    var c4 = document.getElementById("content4");
-    if (c4 && isVisible(c4)) return "content4";
-
-    var c1 = document.getElementById("content1");
-    if (c1 && isVisible(c1)) return "content1";
-
+  function getActiveStep() {
+    // Find visible content step
+    var candidates = qsa(document, "div[id^='content']");
+    for (var i = 0; i < candidates.length; i++) {
+      if (isVisible(candidates[i])) return candidates[i];
+    }
     return null;
   }
 
-  function bindGuards() {
-    document.addEventListener("click", function (e) {
-      var btn = e.target && e.target.closest && e.target.closest(".nl-actions .btn-next");
-      if (!btn) return;
+  function wireUpNextButtons() {
+    qsa(document, ".btn-next").forEach(function (btn) {
+      if (btn.dataset.bnpWired) return;
+      btn.dataset.bnpWired = "1";
 
-      var stepId = currentVisibleStepId();
-      if (stepId === "content1" || stepId === "content4") {
-        var res = validateStep(stepId);
-        if (!res.ok) {
-          e.preventDefault();
-          e.stopPropagation();
-          try {
-            if (res.focusEl && res.focusEl.scrollIntoView) res.focusEl.scrollIntoView({ behavior: "smooth", block: "center" });
-            if (res.focusEl && res.focusEl.focus) res.focusEl.focus({ preventScroll: true });
-          } catch (err) {}
+      btn.addEventListener("click", function (ev) {
+        var step = getActiveStep();
+        if (step && !validateSection(step)) {
+          ev.preventDefault();
+          ev.stopPropagation();
           return false;
         }
+      }, true);
+    });
+  }
+
+  function wireUpFormSubmit() {
+    var form = document.querySelector("form");
+    if (!form || form.dataset.bnpSubmitWired) return;
+    form.dataset.bnpSubmitWired = "1";
+
+    form.addEventListener("submit", function (ev) {
+      var profile = document.getElementById("content1");
+      var ship = document.getElementById("content4");
+
+      var ok1 = profile ? validateSection(profile) : true;
+      var ok2 = ship ? validateSection(ship) : true;
+
+      if (!ok1 || !ok2) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
+      }
+
+      // Build cart payload just before submit
+      try { buildCartPayload(); } catch (e) {}
+    }, true);
+  }
+
+  function fixPaymentButtons() {
+    // Replace any "Complete Payment" / "Complete Checkout" element with a clean submit
+    var candidates = qsa(document, "input, button");
+    candidates.forEach(function (el) {
+      var txt = trim(el.value || el.textContent).toLowerCase();
+      if (!txt) return;
+      if (txt.indexOf("complete payment") === -1 && txt.indexOf("complete checkout") === -1) return;
+
+      var repl = document.createElement("input");
+      repl.type = "submit";
+      repl.value = "Pay Now";
+      repl.className = el.className || "";
+      if (el.getAttribute("style")) repl.setAttribute("style", el.getAttribute("style"));
+
+      // IMPORTANT: no onclick, no checkout hijack
+      if (el.parentNode) el.parentNode.replaceChild(repl, el);
+    });
+
+    // Safety: if old markup somewhere still calls checkPayment(), keep it harmless
+    if (typeof window.checkPayment !== "function") window.checkPayment = function () { return true; };
+  }
+
+  function ensureSingleCartField(form) {
+    form = form || document.querySelector("form");
+    if (!form) return null;
+
+    var existing = qsa(form, "#bnp_cart_json");
+    for (var i = 1; i < existing.length; i++) existing[i].remove();
+
+    var field = existing[0];
+    if (!field) {
+      field = document.createElement("input");
+      field.type = "hidden";
+      field.id = "bnp_cart_json";
+      field.name = "bnp_cart_json";
+      form.appendChild(field);
+    }
+    return field;
+  }
+
+  function cssEscapeLite(str) {
+    return String(str).replace(/[^a-zA-Z0-9_\-]/g, function (ch) {
+      return "\\" + ch.charCodeAt(0).toString(16).toUpperCase() + " ";
+    });
+  }
+
+  function safeLabelForInput(input) {
+    if (!input) return "";
+    var id = input.id;
+    if (id) {
+      var lab = document.querySelector("label[for='" + cssEscapeLite(id) + "']");
+      if (lab) return trim(lab.textContent);
+    }
+    var parentLabel = input.closest("label");
+    if (parentLabel) return trim(parentLabel.textContent);
+    var container = input.closest("li, p, div");
+    return container ? trim(container.textContent) : "";
+  }
+
+  function buildCartPayload() {
+    var form = document.querySelector("form");
+    if (!form) return;
+    var field = ensureSingleCartField(form);
+    if (!field) return;
+
+    var scope =
+      document.querySelector(".campaign-placeholder") ||
+      document.querySelector(".standard-rates") ||
+      document.querySelector(".requested-version") ||
+      document.querySelector(".promo-key") ||
+      form;
+
+    var checked = qsa(scope, "input[type='radio']:checked");
+    var items = checked.map(function (r) {
+      return {
+        id: r.id || null,
+        name: r.name || null,
+        value: r.value || null,
+        label: safeLabelForInput(r) || null
+      };
+    }).filter(function (x) {
+      return x.id || x.name || x.value || x.label;
+    });
+
+    field.value = JSON.stringify({
+      source: "bnp_master",
+      ts: new Date().toISOString(),
+      items: items
+    });
+  }
+
+  function wireCartSync() {
+    var form = document.querySelector("form");
+    if (!form || form.dataset.bnpCartWired) return;
+    form.dataset.bnpCartWired = "1";
+
+    form.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t && t.matches && t.matches("input[type='radio']")) {
+        buildCartPayload();
       }
     }, true);
-
-    var form = document.querySelector("form");
-    if (form && !form.dataset.__bnpRequiredGuard) {
-      form.dataset.__bnpRequiredGuard = "1";
-      form.addEventListener("submit", function (ev) {
-        enforceRequiredNow();
-
-        var stepId = currentVisibleStepId();
-        if (stepId === "content1" || stepId === "content4") {
-          var res = validateStep(stepId);
-          if (!res.ok) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            return false;
-          }
-        }
-      }, true);
-    }
   }
 
-  function init() {
-    ensureStyles();
-    enforceRequiredNow();
+  onReady(function () {
+    injectCss();
+    applyRequiredRules();
+    wireUpNextButtons();
+    wireUpFormSubmit();
+    fixPaymentButtons();
+    wireCartSync();
 
-    if (window.MutationObserver) {
-      var t1 = document.getElementById("content1");
-      var t4 = document.getElementById("content4");
-      var mo = new MutationObserver(debounce(enforceRequiredNow, 120));
-      if (t1) mo.observe(t1, { attributes: true, childList: true, subtree: true });
-      if (t4) mo.observe(t4, { attributes: true, childList: true, subtree: true });
+    // Re-apply required rules whenever DragonForms shows/hides fields (country-driven)
+    var targets = [document.getElementById("content1"), document.getElementById("content4")].filter(Boolean);
+    if (targets.length) {
+      var mo = new MutationObserver(function () {
+        applyRequiredRules();
+        wireUpNextButtons();
+      });
+      targets.forEach(function (t) {
+        mo.observe(t, { attributes: true, childList: true, subtree: true });
+      });
     }
 
-    bindGuards();
-  }
-
-  onReady(init);
+    // Initial cart payload
+    try { buildCartPayload(); } catch (e) {}
+  });
 })();
