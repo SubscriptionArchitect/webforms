@@ -1,248 +1,234 @@
-/* BNP / DF iframe autosize — SITE (PARENT) FULL SCRIPT (NO <script> TAGS)
-   + Adds "My Account" button under the "Welcome, <name>" user action when present.
-*/
 (function () {
   "use strict";
 
-  var MSG_TYPE = "DF_IFRAME_RESIZE";
+  const testingMode = false;
 
-  // --------- CONFIG: tweak selectors if you want a specific placement ---------
-  var CONTENT_TARGET_SELECTORS = [
-    ".article-body",
-    ".article-content",
-    ".article__body",
-    ".article__content",
-    "#article-body",
-    "#content",
-    "main"
-  ];
+  /* =====================================================
+     Inject Styles Dynamically
+  ===================================================== */
+  function injectStyles() {
+    if (document.getElementById("account-overlay-styles")) return;
 
-  var ENABLE_AUTO_RELOCATE = true;
+    const style = document.createElement("style");
+    style.id = "account-overlay-styles";
+    style.textContent = `
+      #loading-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background: #000 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 24px !important;
+        box-sizing: border-box !important;
+        z-index: 2147483647 !important;
+        isolation: isolate !important;
+      }
 
-  // ---- My Account button config ----
-  var WELCOME_LI_SELECTOR = 'li.user-actions__account.user-actions__account-link';
-  var MY_ACCOUNT_BTN_ID = "bnp-my-account-btn";
-  var MY_ACCOUNT_LABEL = "My Account";
+      #spinner-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        max-width: 520px;
+        min-height: 260px;
+        width: 100%;
+      }
 
-  // If your site already has an account page link somewhere, we try to reuse it.
-  // Otherwise, we fall back to /customerservice (safe default) and let your existing redirects handle it.
-  var FALLBACK_ACCOUNT_HREF = "/customerservice";
+      #spinner {
+        border: 16px solid rgba(255,255,255,.2);
+        border-top: 16px solid #d71920;
+        border-radius: 50%;
+        width: 100px;
+        height: 100px;
+        animation: spin 1s linear infinite;
+      }
 
-  // -------------------------------------------------------------
-  function toInt(v) {
-    var n = parseInt(v, 10);
-    return isFinite(n) ? n : null;
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      #loading-text {
+        color: #fff;
+        font-size: 24px;
+        font-weight: 700;
+        margin-top: 16px;
+        font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      }
+
+      #loading-overlay .continue-card {
+        max-width: 520px;
+        width: min(520px,100%);
+        background: #1a1a1a;
+        border-radius: 14px;
+        padding: 18px 18px 14px;
+        box-shadow: 0 18px 60px rgba(0,0,0,.25);
+        color: #fff;
+        text-align: left;
+        font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      }
+
+      #loading-overlay .continue-card h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+
+      #loading-overlay .continue-card p {
+        margin: 0 0 12px;
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      #loading-overlay .continue-card button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        background: #d71920;
+        color: #fff;
+      }
+    `;
+
+    document.head.appendChild(style);
   }
 
-  function qs(sel, root) { return (root || document).querySelector(sel); }
-  function qsa(sel, root) { return (root || document).querySelectorAll(sel); }
+  /* =====================================================
+     Create Overlay
+  ===================================================== */
+  function createOverlay() {
+    if (document.getElementById("loading-overlay")) return;
 
-  function findFirst(selList) {
-    for (var i = 0; i < selList.length; i++) {
-      var el = qs(selList[i]);
-      if (el) return el;
-    }
-    return null;
+    const overlay = document.createElement("div");
+    overlay.id = "loading-overlay";
+
+    overlay.innerHTML = `
+      <div id="spinner-container">
+        <div id="spinner"></div>
+        <div id="loading-text">Loading</div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
   }
 
-  function isLikelyDFIframe(iframe) {
-    if (!iframe) return false;
-    var src = iframe.getAttribute("src") || iframe.src || "";
-    return /dragoniframe=true|omedasite=|loading\.do|init\.do/i.test(src);
-  }
-
-  function findAnyDFIframe() {
-    var frames = qsa("iframe");
-    for (var i = 0; i < frames.length; i++) {
-      if (isLikelyDFIframe(frames[i])) return frames[i];
-    }
-    return null;
-  }
-
-  function findIframeForSource(srcWin) {
-    var frames = qsa("iframe");
-    for (var i = 0; i < frames.length; i++) {
-      var f = frames[i];
-      try { if (f.contentWindow === srcWin) return f; } catch (e) {}
-    }
-    return null;
-  }
-
-  function looksLikeGPTContainer(el) {
-    if (!el) return false;
-    var id = el.id || "";
-    return /^google_ads_iframe_/i.test(id) && /__container__$/i.test(id);
-  }
-
-  function ensureWrapper(iframe) {
-    var parent = iframe.parentElement;
-    if (parent && parent.getAttribute && parent.getAttribute("data-bnp-iframe-wrap") === "1") {
-      return parent;
-    }
-
-    var wrap = document.createElement("div");
-    wrap.setAttribute("data-bnp-iframe-wrap", "1");
-    wrap.style.width = "100%";
-    wrap.style.maxWidth = "100%";
-    wrap.style.margin = "16px 0";
-    wrap.style.display = "block";
-
-    if (parent) {
-      parent.insertBefore(wrap, iframe);
-      wrap.appendChild(iframe);
-    } else {
-      document.body.appendChild(wrap);
-      wrap.appendChild(iframe);
-    }
-
-    return wrap;
-  }
-
-  function applyFluidWidth(iframe) {
-    iframe.style.width = "100%";
-    iframe.style.maxWidth = "100%";
-    iframe.style.minWidth = "0";
-    iframe.style.display = "block";
-    iframe.style.border = "0";
-    iframe.removeAttribute("width");
-    iframe.setAttribute("scrolling", "no");
-  }
-
-  function relocateIfTrappedInGPT(iframe) {
-    if (!ENABLE_AUTO_RELOCATE) return iframe;
-
-    var p = iframe.parentElement;
-    if (!p) return iframe;
-
-    var wrap = (p.getAttribute && p.getAttribute("data-bnp-iframe-wrap") === "1") ? p : null;
-    var container = wrap ? wrap.parentElement : p;
-
-    if (!looksLikeGPTContainer(container)) return iframe;
-
-    var target = findFirst(CONTENT_TARGET_SELECTORS);
-    if (!target) return iframe;
-
-    var w = ensureWrapper(iframe);
-    if (target.firstChild) target.insertBefore(w, target.firstChild);
-    else target.appendChild(w);
-
-    return iframe;
-  }
-
-  // ---- Height application: exact (no padding), tiny threshold to avoid jitter ----
-  var lastApplied = new WeakMap();
-
-  function applyExactHeight(iframe, h) {
-    var prev = lastApplied.get(iframe) || 0;
-    if (prev && Math.abs(h - prev) < 2) return;
-
-    lastApplied.set(iframe, h);
-    iframe.style.height = h + "px";
-    iframe.style.minHeight = h + "px";
-  }
-
-  // ---- "My Account" injection under Welcome ----
-  function resolveAccountHref() {
-    // Prefer an existing account-related link if present
-    var a =
-      qs('a[href*="/customerservice"]') ||
-      qs('a[href*="account."]') ||
-      qs('a[href*="myaccount"]') ||
-      qs('a[href*="hello"]') ||
-      qs('a[href*="loading.do?omedasite="]');
-
-    if (a && a.getAttribute("href")) return a.getAttribute("href");
-    return FALLBACK_ACCOUNT_HREF;
-  }
-
-  function ensureMyAccountButton() {
-    var li = qs(WELCOME_LI_SELECTOR);
-    if (!li) return;
-
-    // Only act if it actually says "Welcome"
-    var txt = (li.textContent || "").trim();
-    if (!/^welcome\b/i.test(txt)) return;
-
-    // Avoid duplicates
-    if (qs("#" + MY_ACCOUNT_BTN_ID)) return;
-
-    var href = resolveAccountHref();
-
-    var btn = document.createElement("a");
-    btn.id = MY_ACCOUNT_BTN_ID;
-    btn.href = href;
-    btn.textContent = MY_ACCOUNT_LABEL;
-
-    // Minimal inline styling so it looks like a button without needing CSS changes
-    btn.style.display = "inline-block";
-    btn.style.marginTop = "8px";
-    btn.style.padding = "8px 12px";
-    btn.style.borderRadius = "6px";
-    btn.style.textDecoration = "none";
-    btn.style.fontWeight = "600";
-    btn.style.lineHeight = "1";
-    btn.style.border = "1px solid rgba(0,0,0,.15)";
-    btn.style.background = "#fff";
-    btn.style.color = "inherit";
-
-    // Put it directly under the Welcome <li>
-    li.appendChild(document.createElement("br"));
-    li.appendChild(btn);
-  }
-
-  function watchForWelcome() {
-    ensureMyAccountButton();
+  /* =====================================================
+     Brand-Aware My Account URL
+  ===================================================== */
+  function buildMyAccountUrl() {
     try {
-      var mo = new MutationObserver(function () { ensureMyAccountButton(); });
-      mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    } catch (e) {}
+      const current = new URL(window.location.href);
+
+      let host = current.hostname.replace(/^www\./i, "");
+
+      if (!host.startsWith("account.")) {
+        host = "account." + host;
+      }
+
+      return current.protocol + "//" + host + "/my_account&r=@{encrypted_customer_id}@";
+
+    } catch (e) {
+      return "/my_account&r=@{encrypted_customer_id}@";
+    }
   }
 
-  // ---- Boot: try to fix width trap + inject button ASAP ----
-  function boot() {
-    // iframe relocate/width
-    var ifr = findAnyDFIframe();
-    if (ifr) {
-      ensureWrapper(ifr);
-      relocateIfTrappedInGPT(ifr);
-      applyFluidWidth(ifr);
+  function inIframe() {
+    try { return window.top !== window.self; }
+    catch (e) { return true; }
+  }
+
+  /* =====================================================
+     Replace Spinner With Continue Card
+  ===================================================== */
+  function replaceWithContinue() {
+    const overlay = document.getElementById("loading-overlay");
+
+    // Hide everything visually behind overlay
+    document.querySelectorAll("body > *:not(#loading-overlay)").forEach(el => {
+      el.style.display = "none";
+    });
+
+    overlay.innerHTML = "";
+
+    const card = document.createElement("div");
+    card.className = "continue-card";
+
+    card.innerHTML = `
+      <h3>Continue to your account</h3>
+      <p>Your browser blocked an automatic redirect. Click below to proceed.</p>
+    `;
+
+    const btn = document.createElement("button");
+    btn.textContent = "My Account";
+
+    btn.onclick = function () {
+      const accountUrl = buildMyAccountUrl();
+
+      try {
+        if (inIframe()) window.top.location.href = accountUrl;
+        else window.location.href = accountUrl;
+      } catch (e) {
+        window.location.href = accountUrl;
+      }
+    };
+
+    card.appendChild(btn);
+    overlay.appendChild(card);
+    btn.focus();
+  }
+
+  /* =====================================================
+     Attempt Redirect
+  ===================================================== */
+  function attemptRedirect() {
+    if (testingMode) {
+      replaceWithContinue();
+      return;
     }
-    // account button
-    ensureMyAccountButton();
+
+    const accountUrl = buildMyAccountUrl();
+
+    try {
+      if (inIframe()) window.top.location.href = accountUrl;
+      else window.location.href = accountUrl;
+
+      setTimeout(() => {
+        replaceWithContinue();
+      }, 300);
+
+    } catch (e) {
+      replaceWithContinue();
+    }
+  }
+
+  /* =====================================================
+     Spinner Animation
+  ===================================================== */
+  function startSpinnerDots() {
+    setInterval(() => {
+      const text = document.getElementById("loading-text");
+      if (!text) return;
+
+      text.dataset.dots = (parseInt(text.dataset.dots || 0) + 1) % 4;
+      text.textContent = "Loading" + ".".repeat(text.dataset.dots);
+    }, 500);
+  }
+
+  /* =====================================================
+     Init
+  ===================================================== */
+  function init() {
+    injectStyles();
+    createOverlay();
+    startSpinnerDots();
+    setTimeout(attemptRedirect, 600);
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      boot();
-      watchForWelcome();
-    });
+    document.addEventListener("DOMContentLoaded", init);
   } else {
-    boot();
-    watchForWelcome();
+    init();
   }
-  window.addEventListener("load", boot);
-
-  // Expose a flag for debugging
-  window.__resizeListenerInstalled = true;
-
-  // ---- Listen for child height messages ----
-  window.addEventListener("message", function (e) {
-    var d = e.data;
-    if (!d || typeof d !== "object") return;
-    if (d.type !== MSG_TYPE) return;
-
-    var h = toInt(d.height);
-    if (!h || h < 50) return;
-
-    var iframe = findIframeForSource(e.source);
-    if (!iframe) return;
-    if (!isLikelyDFIframe(iframe)) return;
-
-    ensureWrapper(iframe);
-    relocateIfTrappedInGPT(iframe);
-
-    applyFluidWidth(iframe);
-    applyExactHeight(iframe, h);
-  }, true);
 
 })();
