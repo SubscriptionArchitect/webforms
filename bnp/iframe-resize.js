@@ -1,6 +1,13 @@
-/* BNP My Account Injector (site-side redirect pattern)
+/* BNP My Account Injector (FIX: put r= on the MYACCOUNT URL itself, not inside returnurl)
    Builds:
-   https://{sitehost}/user/omeda/redirect?url={ENCODED https://account.{sitehost}/loading.do?omedasite={BRAND}_myaccount&r=@{encrypted_customer_id}@ }
+   https://{site}/user/omeda/redirect?url={ENCODED https://account.{site}/loading.do?omedasite={brand}_myaccount&r=<ENC>}
+
+   Key fix:
+   - We now resolve ENC robustly:
+     1) URL ?r=
+     2) loader data-encrypted="@{encrypted_customer_id}@"
+     3) scrape any existing omeda/account links on the page and extract r=
+     4) scrape returnurl=... and extract r= inside it (last resort)
 */
 
 (function () {
@@ -13,7 +20,7 @@
   var WELCOME_LI_SELECTOR = 'li.user-actions__account.user-actions__account-link';
   var REDIRECT_PATH = "/user/omeda/redirect";
 
-  // Domain → Brand code map (add as needed)
+  // Domain → Brand code map (expand as needed)
   var BRAND_MAP = {
     "architecturalrecord.com": "AR",
     "achrnews.com": "NEWS",
@@ -37,15 +44,21 @@
   };
 
   function normalizeHost() {
-    return String(window.location.hostname || "")
-      .toLowerCase()
-      .replace(/^www\./, "");
+    return String(window.location.hostname || "").toLowerCase().replace(/^www\./, "");
   }
 
   function getBrandCode() {
     var host = normalizeHost();
-    if (BRAND_MAP[host]) return BRAND_MAP[host];
-    return host.split(".")[0].toUpperCase();
+    return (BRAND_MAP[host] || host.split(".")[0] || "").toUpperCase();
+  }
+
+  function safeParams(url) {
+    try { return new URL(url, window.location.origin).searchParams; } catch (e) { return null; }
+  }
+
+  function getQueryRFromHref(href) {
+    var sp = safeParams(href);
+    return sp ? (sp.get("r") || "") : "";
   }
 
   function getEncryptedFromQuery() {
@@ -63,20 +76,59 @@
     return String(loader.getAttribute("data-encrypted") || "").trim();
   }
 
+  function scrapeRFromExistingLinks() {
+    // Look for any link that already has r= (account/omeda/loading)
+    var links = document.querySelectorAll('a[href*="r="], a[href*="loading.do"], a[href*="/user/omeda"]');
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute("href") || "";
+      if (!href) continue;
+
+      // Direct r=
+      var r = getQueryRFromHref(href);
+      if (r) return r;
+
+      // Sometimes r is inside returnurl=...
+      try {
+        var sp = safeParams(href);
+        if (sp) {
+          var ru = sp.get("returnurl") || sp.get("url") || "";
+          if (ru) {
+            var r2 = getQueryRFromHref(ru);
+            if (r2) return r2;
+          }
+        }
+      } catch (e) {}
+    }
+    return "";
+  }
+
+  function resolveEncryptedId() {
+    // 1) Direct query
+    var r = getEncryptedFromQuery();
+    if (r) return r;
+
+    // 2) Merge token passed via loader attr
+    r = getEncryptedFromLoaderAttr();
+    if (r) return r;
+
+    // 3) Scrape from any existing links (very common on logged-in pages)
+    r = scrapeRFromExistingLinks();
+    if (r) return r;
+
+    return "";
+  }
+
   function buildHref() {
     var host = normalizeHost();
-    var brand = getBrandCode().toLowerCase(); // omedasite is typically lowercase
+    var brand = getBrandCode().toLowerCase(); // omedasite convention: lowercase
+    var enc = resolveEncryptedId();
 
-    // prefer actual query value, else DF token
-    var enc = getEncryptedFromQuery() || getEncryptedFromLoaderAttr();
-
-    // Account URL that will be passed through site redirect
+    // IMPORTANT: r MUST be on the myaccount URL itself
     var accountUrl =
       "https://account." + host +
       "/loading.do?omedasite=" + encodeURIComponent(brand + "_myaccount") +
       "&r=" + encodeURIComponent(enc || "");
 
-    // Site redirect wrapper
     var siteBase = window.location.origin.replace(/\/+$/, "");
     return siteBase + REDIRECT_PATH + "?url=" + encodeURIComponent(accountUrl);
   }
@@ -95,7 +147,6 @@
     btn.href = buildHref();
     btn.textContent = "My Account";
 
-    // minimal button styling
     btn.style.display = "inline-block";
     btn.style.marginTop = "8px";
     btn.style.padding = "8px 12px";
