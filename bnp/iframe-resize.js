@@ -1,23 +1,22 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Applies EXACT height received (no extra padding).
+   Applies height with a SMALL NEGATIVE PAD to remove the “iframe too tall” gap.
 */
 (function () {
   "use strict";
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Width controls (adjust if desired)
+  // Width controls (unchanged unless you want to tweak)
   var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
-  // No extra height. Keep 0.
-  var PARENT_PAD_PX = 0;
+  // ✅ If iframe is still too tall, this should be negative.
+  // Start at -6. If still tall, try -8. If it clips, try -4.
+  var PARENT_PAD_PX = -6;
 
-  // Tight threshold so it matches closely (but still avoids micro-jitter)
   var APPLY_THRESHOLD_PX = 2;
 
-  // Optional: restrict which origins can resize
   var ALLOWED_ORIGINS = {
     "https://bnp.dragonforms.com": true,
     "https://account.enr.com": true,
