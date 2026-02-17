@@ -1,168 +1,200 @@
-/* BNP My Account Injector — robust r extraction (handles nested referer/returnurl)
-   Builds:
-   https://{site}/user/omeda/redirect?url={ENCODED https://account.{site}/loading.do?omedasite={brand}_myaccount&r=<ENC>}
-*/
+/* BNP / DF iframe autosize — SITE (PARENT) FULL SCRIPT (NO <script> TAGS)
+   What it does:
+   1) (Optional but recommended) If the DF iframe is sitting inside a GPT ad container
+      (google_ads_iframe_*__container__), it moves it into the first real content container found.
+      This fixes "too narrow" caused by leaderboard/ad-slot width caps.
+   2) Sets iframe width fluid (100% of its container) with no hard-coded sizes.
+   3) Sets iframe height EXACTLY to what the form (child) reports (no extra padding).
 
+   Requirements:
+   - The FORM (child) page must postMessage: { type:"DF_IFRAME_RESIZE", height:<px> }
+*/
 (function () {
   "use strict";
 
-  if (window.__BNP_MY_ACCOUNT__) return;
-  window.__BNP_MY_ACCOUNT__ = true;
+  var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  var BTN_ID = "bnp-my-account-btn";
-  var WELCOME_LI_SELECTOR = 'li.user-actions__account.user-actions__account-link';
-  var REDIRECT_PATH = "/user/omeda/redirect";
+  // --------- CONFIG: tweak selectors if you want a specific placement ---------
+  // Where to relocate the iframe if it's trapped in a GPT ad container.
+  // Order matters: first match wins.
+  var CONTENT_TARGET_SELECTORS = [
+    ".article-body",
+    ".article-content",
+    ".article__body",
+    ".article__content",
+    "#article-body",
+    "#content",
+    "main"
+  ];
 
-  var BRAND_MAP = {
-    "architecturalrecord.com": "AR",
-    "achrnews.com": "NEWS",
-    "enr.com": "ENR",
-    "assemblymag.com": "ASM",
-    "adhesivesmag.com": "ASI",
-    "bevindustry.com": "BI",
-    "buildingenclosureonline.com": "BE",
-    "dairyfoods.com": "DF",
-    "engineered-systems.com": "ES",
-    "foodengineeringmag.com": "FE",
-    "foodsafetymagazine.com": "FSM",
-    "ishn.com": "ISHN",
-    "nationaldriller.com": "ND",
-    "provisioneronline.com": "NP",
-    "pcimag.com": "PCI",
-    "pmengineer.com": "PM",
-    "preparedfoods.com": "PF",
-    "roofingcontractor.com": "RC",
-    "stoneworld.com": "SW"
-  };
+  // If true, will attempt to move iframe out of GPT container once (helps width).
+  var ENABLE_AUTO_RELOCATE = true;
 
-  function normalizeHost() {
-    return String(window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+  // -------------------------------------------------------------
+  function toInt(v) {
+    var n = parseInt(v, 10);
+    return isFinite(n) ? n : null;
   }
 
-  function getBrandCode() {
-    var host = normalizeHost();
-    return (BRAND_MAP[host] || host.split(".")[0] || "").toUpperCase();
+  function qs(sel, root) {
+    return (root || document).querySelector(sel);
   }
 
-  function tryGetParam(urlLike, key) {
-    try {
-      var u = new URL(urlLike, window.location.origin);
-      return u.searchParams.get(key) || "";
-    } catch (e) {
-      return "";
+  function qsa(sel, root) {
+    return (root || document).querySelectorAll(sel);
+  }
+
+  function findFirst(selList) {
+    for (var i = 0; i < selList.length; i++) {
+      var el = qs(selList[i]);
+      if (el) return el;
     }
+    return null;
   }
 
-  // Pull r from:
-  // - direct URL (?r=)
-  // - any query param value that itself contains a URL with r=
-  // - any query param value that is URL-encoded and contains r=
-  function findRDeep() {
-    // 1) direct
-    try {
-      var sp = new URLSearchParams(window.location.search);
-      var direct = sp.get("r") || "";
-      if (direct) return direct;
+  function isLikelyDFIframe(iframe) {
+    if (!iframe) return false;
+    var src = iframe.getAttribute("src") || iframe.src || "";
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do/i.test(src);
+  }
 
-      // 2) scan all params for nested URLs containing r
-      for (var pair of sp.entries()) {
-        var val = pair[1] || "";
-        if (!val) continue;
+  function findAnyDFIframe() {
+    var frames = qsa("iframe");
+    for (var i = 0; i < frames.length; i++) {
+      if (isLikelyDFIframe(frames[i])) return frames[i];
+    }
+    return null;
+  }
 
-        // raw nested URL
-        var r1 = tryGetParam(val, "r");
-        if (r1) return r1;
+  function findIframeForSource(srcWin) {
+    var frames = qsa("iframe");
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      try {
+        if (f.contentWindow === srcWin) return f;
+      } catch (e) {}
+    }
+    return null;
+  }
 
-        // decoded nested URL
-        try {
-          var decoded = decodeURIComponent(val);
-          var r2 = tryGetParam(decoded, "r");
-          if (r2) return r2;
-        } catch (e2) {}
-      }
-    } catch (e3) {}
+  function looksLikeGPTContainer(el) {
+    if (!el) return false;
+    var id = el.id || "";
+    // Matches: google_ads_iframe_/52040140/...__container__
+    return /^google_ads_iframe_/i.test(id) && /__container__$/i.test(id);
+  }
 
-    // 3) scan any existing links for r directly or inside returnurl/url
-    var links = document.querySelectorAll('a[href*="r="], a[href*="returnurl="], a[href*="referer="], a[href*="url="], a[href*="loading.do"], a[href*="/user/omeda"]');
-    for (var i = 0; i < links.length; i++) {
-      var href = links[i].getAttribute("href") || "";
-      if (!href) continue;
-
-      var r = tryGetParam(href, "r");
-      if (r) return r;
-
-      var ru = tryGetParam(href, "returnurl") || tryGetParam(href, "referer") || tryGetParam(href, "url");
-      if (ru) {
-        var r3 = tryGetParam(ru, "r");
-        if (r3) return r3;
-        try {
-          var ruDec = decodeURIComponent(ru);
-          var r4 = tryGetParam(ruDec, "r");
-          if (r4) return r4;
-        } catch (e4) {}
-      }
+  function ensureWrapper(iframe) {
+    // Wrap iframe so we can control layout without hardcoded sizes
+    var parent = iframe.parentElement;
+    if (parent && parent.getAttribute && parent.getAttribute("data-bnp-iframe-wrap") === "1") {
+      return parent;
     }
 
-    return "";
+    var wrap = document.createElement("div");
+    wrap.setAttribute("data-bnp-iframe-wrap", "1");
+    wrap.style.width = "100%";
+    wrap.style.maxWidth = "100%";
+    wrap.style.margin = "16px 0";
+    wrap.style.display = "block";
+
+    if (parent) {
+      parent.insertBefore(wrap, iframe);
+      wrap.appendChild(iframe);
+    } else {
+      document.body.appendChild(wrap);
+      wrap.appendChild(iframe);
+    }
+
+    return wrap;
   }
 
-  function buildHref() {
-    var host = normalizeHost();
-    var brand = getBrandCode().toLowerCase();
-    var enc = findRDeep(); // ✅ this is the fix
-
-    // Put r on the MYACCOUNT URL (not in returnurl)
-    var accountUrl =
-      "https://account." + host +
-      "/loading.do?omedasite=" + encodeURIComponent(brand + "_myaccount") +
-      "&r=" + encodeURIComponent(enc || "");
-
-    var siteBase = window.location.origin.replace(/\/+$/, "");
-    return siteBase + REDIRECT_PATH + "?url=" + encodeURIComponent(accountUrl);
+  function applyFluidWidth(iframe) {
+    // Do not set any fixed widths—just fill container
+    iframe.style.width = "100%";
+    iframe.style.maxWidth = "100%";
+    iframe.style.minWidth = "0";
+    iframe.style.display = "block";
+    iframe.style.border = "0";
+    iframe.removeAttribute("width");
+    iframe.setAttribute("scrolling", "no");
   }
 
-  function injectButton() {
-    var li = document.querySelector(WELCOME_LI_SELECTOR);
-    if (!li) return;
+  function relocateIfTrappedInGPT(iframe) {
+    if (!ENABLE_AUTO_RELOCATE) return iframe;
 
-    var txt = (li.textContent || "").trim();
-    if (!/^welcome\b/i.test(txt)) return;
+    var p = iframe.parentElement;
+    if (!p) return iframe;
 
-    if (document.getElementById(BTN_ID)) return;
+    // If already wrapped, check wrapper's parent too
+    var wrap = (p.getAttribute && p.getAttribute("data-bnp-iframe-wrap") === "1") ? p : null;
+    var container = wrap ? wrap.parentElement : p;
 
-    var btn = document.createElement("a");
-    btn.id = BTN_ID;
-    btn.href = buildHref();
-    btn.textContent = "My Account";
+    if (!looksLikeGPTContainer(container)) return iframe;
 
-    btn.style.display = "inline-block";
-    btn.style.marginTop = "8px";
-    btn.style.padding = "8px 12px";
-    btn.style.borderRadius = "6px";
-    btn.style.textDecoration = "none";
-    btn.style.fontWeight = "600";
-    btn.style.border = "1px solid rgba(0,0,0,.15)";
-    btn.style.background = "#fff";
-    btn.style.color = "inherit";
+    var target = findFirst(CONTENT_TARGET_SELECTORS);
+    if (!target) return iframe;
 
-    li.appendChild(document.createElement("br"));
-    li.appendChild(btn);
+    var w = ensureWrapper(iframe);
+
+    // Put it at top of target (feel free to change insertion point)
+    if (target.firstChild) target.insertBefore(w, target.firstChild);
+    else target.appendChild(w);
+
+    return iframe;
   }
 
-  function watch() {
-    injectButton();
-    try {
-      new MutationObserver(injectButton).observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        characterData: true
-      });
-    } catch (e) {}
+  // ---- Height application: exact (no padding), tiny threshold to avoid jitter ----
+  var lastApplied = new WeakMap();
+
+  function applyExactHeight(iframe, h) {
+    var prev = lastApplied.get(iframe) || 0;
+    if (prev && Math.abs(h - prev) < 2) return;
+
+    lastApplied.set(iframe, h);
+    iframe.style.height = h + "px";
+    iframe.style.minHeight = h + "px";
+  }
+
+  // ---- Boot: try to fix width trap ASAP ----
+  function bootRelocate() {
+    var ifr = findAnyDFIframe();
+    if (!ifr) return;
+    ensureWrapper(ifr);
+    relocateIfTrappedInGPT(ifr);
+    applyFluidWidth(ifr);
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", watch);
+    document.addEventListener("DOMContentLoaded", bootRelocate);
   } else {
-    watch();
+    bootRelocate();
   }
+  window.addEventListener("load", bootRelocate);
+
+  // Expose a flag for debugging
+  window.__resizeListenerInstalled = true;
+
+  // ---- Listen for child height messages ----
+  window.addEventListener("message", function (e) {
+    var d = e.data;
+    if (!d || typeof d !== "object") return;
+    if (d.type !== MSG_TYPE) return;
+
+    var h = toInt(d.height);
+    if (!h || h < 50) return;
+
+    var iframe = findIframeForSource(e.source);
+    if (!iframe) return;
+    if (!isLikelyDFIframe(iframe)) return;
+
+    // Ensure we are not constrained by ad slot container
+    ensureWrapper(iframe);
+    relocateIfTrappedInGPT(iframe);
+
+    // Apply fluid width and exact height
+    applyFluidWidth(iframe);
+    applyExactHeight(iframe, h);
+  }, true);
+
 })();
