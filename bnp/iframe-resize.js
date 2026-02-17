@@ -1,8 +1,6 @@
-/* BNP My Account Injector
-   - Detects Welcome, <Name>
-   - Maps domain → brandcode
-   - Uses ?r= if present, else uses data-encrypted="@{encrypted_customer_id}@"
-   - Builds: https://account.brandsite.com/BRAND_myaccount&r=...
+/* BNP My Account Injector (site-side redirect pattern)
+   Builds:
+   https://{sitehost}/user/omeda/redirect?url={ENCODED https://account.{sitehost}/loading.do?omedasite={BRAND}_myaccount&r=@{encrypted_customer_id}@ }
 */
 
 (function () {
@@ -13,12 +11,13 @@
 
   var BTN_ID = "bnp-my-account-btn";
   var WELCOME_LI_SELECTOR = 'li.user-actions__account.user-actions__account-link';
+  var REDIRECT_PATH = "/user/omeda/redirect";
 
-  // ---------------- DOMAIN → BRAND CODE MAP ----------------
+  // Domain → Brand code map (add as needed)
   var BRAND_MAP = {
+    "architecturalrecord.com": "AR",
     "achrnews.com": "NEWS",
     "enr.com": "ENR",
-    "architecturalrecord.com": "AR",
     "assemblymag.com": "ASM",
     "adhesivesmag.com": "ASI",
     "bevindustry.com": "BI",
@@ -61,24 +60,25 @@
   function getEncryptedFromLoaderAttr() {
     var loader = document.getElementById("bnp-myaccount-loader");
     if (!loader) return "";
-    var v = loader.getAttribute("data-encrypted") || "";
-    return String(v).trim();
+    return String(loader.getAttribute("data-encrypted") || "").trim();
   }
 
-  function buildAccountUrl() {
+  function buildHref() {
     var host = normalizeHost();
-    var brand = getBrandCode();
+    var brand = getBrandCode().toLowerCase(); // omedasite is typically lowercase
 
-    // Prefer real value from URL; otherwise use DF merge token from loader
+    // prefer actual query value, else DF token
     var enc = getEncryptedFromQuery() || getEncryptedFromLoaderAttr();
 
-    // Always include &r= (even if token is blank)
-    // NOTE: your required format uses "&r=" (not "?r=")
-    var base = "https://account." + host + "/";
-    var path = brand + "_myaccount";
+    // Account URL that will be passed through site redirect
+    var accountUrl =
+      "https://account." + host +
+      "/loading.do?omedasite=" + encodeURIComponent(brand + "_myaccount") +
+      "&r=" + encodeURIComponent(enc || "");
 
-    if (enc) return base + path + "&r=" + encodeURIComponent(enc);
-    return base + path + "&r=";
+    // Site redirect wrapper
+    var siteBase = window.location.origin.replace(/\/+$/, "");
+    return siteBase + REDIRECT_PATH + "?url=" + encodeURIComponent(accountUrl);
   }
 
   function injectButton() {
@@ -92,9 +92,10 @@
 
     var btn = document.createElement("a");
     btn.id = BTN_ID;
-    btn.href = buildAccountUrl();
+    btn.href = buildHref();
     btn.textContent = "My Account";
 
+    // minimal button styling
     btn.style.display = "inline-block";
     btn.style.marginTop = "8px";
     btn.style.padding = "8px 12px";
