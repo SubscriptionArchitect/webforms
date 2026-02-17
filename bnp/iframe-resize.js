@@ -1,5 +1,6 @@
 /* DF iframe autosize — PARENT (site)
-   Sets iframe height EXACTLY to what child reports.
+   - Height: EXACT from child
+   - Width: fluid (100%), no fixed sizes
 */
 (function () {
   "use strict";
@@ -21,6 +22,21 @@
     return null;
   }
 
+  function applyFluidWidth(iframe) {
+    // Let the iframe fill whatever container it lives in
+    iframe.style.width = "100%";
+    iframe.style.maxWidth = "100%";
+    iframe.style.minWidth = "0";
+    iframe.style.display = "block";
+
+    // Remove common iframe constraints if present
+    iframe.removeAttribute("width");
+
+    // Keep it clean
+    iframe.style.border = "0";
+    iframe.setAttribute("scrolling", "no");
+  }
+
   window.__resizeListenerInstalled = true;
 
   window.addEventListener("message", function (e) {
@@ -34,13 +50,15 @@
     var iframe = findIframeForSource(e.source);
     if (!iframe) return;
 
+    // Width fix
+    applyFluidWidth(iframe);
+
+    // Height exact
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(h - prev) < 2) return;
 
     lastApplied.set(iframe, h);
     iframe.style.height = h + "px";
     iframe.style.minHeight = h + "px";
-    iframe.setAttribute("scrolling", "no");
-    iframe.style.border = "0";
   }, true);
 })();
