@@ -3,8 +3,16 @@
 
   const testingMode = false;
 
+  const FIELD_IDS = {
+    firstName: "id1",
+    ecid:      "id110",
+    email:     "id13",
+    authId:    "id153",
+    wsgDrop:   "optp2396"
+  };
+
   /* =====================================================
-     Inject Styles
+     Inject Overlay Styles
   ===================================================== */
   function injectStyles() {
     if (document.getElementById("account-overlay-styles")) return;
@@ -15,26 +23,18 @@
       #loading-overlay {
         position: fixed !important;
         inset: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
         background: #000 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         padding: 24px !important;
-        box-sizing: border-box !important;
         z-index: 2147483647 !important;
-        isolation: isolate !important;
       }
 
       #spinner-container {
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        max-width: 520px;
-        min-height: 260px;
-        width: 100%;
       }
 
       #spinner {
@@ -53,71 +53,42 @@
         font-size: 24px;
         font-weight: 700;
         margin-top: 16px;
-        font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
       }
 
-      #loading-overlay .continue-card {
+      .continue-card {
         max-width: 520px;
-        width: min(520px,100%);
+        width: 100%;
         background: #1a1a1a;
         border-radius: 14px;
-        padding: 18px 18px 14px;
-        box-shadow: 0 18px 60px rgba(0,0,0,.25);
+        padding: 18px;
         color: #fff;
-        text-align: left;
-        font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
       }
 
-      #loading-overlay .continue-card h3 {
-        margin: 0 0 6px;
-        font-size: 18px;
-      }
-
-      #loading-overlay .continue-card p {
-        margin: 0 0 12px;
-        font-size: 14px;
-        line-height: 1.35;
-      }
-
-      #loading-overlay .continue-card button {
-        appearance: none;
+      .continue-card button {
         border: 0;
         border-radius: 10px;
         padding: 10px 14px;
         font-weight: 700;
-        cursor: pointer;
         background: #d71920;
         color: #fff;
+        cursor: pointer;
       }
     `;
-
     document.head.appendChild(style);
   }
 
-  /* =====================================================
-     Create Overlay
-  ===================================================== */
   function createOverlay() {
     if (document.getElementById("loading-overlay")) return;
 
     const overlay = document.createElement("div");
     overlay.id = "loading-overlay";
-
     overlay.innerHTML = `
       <div id="spinner-container">
         <div id="spinner"></div>
         <div id="loading-text">Loading</div>
       </div>
     `;
-
     document.body.appendChild(overlay);
-  }
-
-  /* =====================================================
-     ENR My Account URL (Exact Format Required)
-  ===================================================== */
-  function buildEnrMyAccountUrl() {
-    return "https://account.enr.com/enr_myaccount&r=@{encrypted_customer_id}@";
   }
 
   function inIframe() {
@@ -126,16 +97,44 @@
   }
 
   /* =====================================================
-     Replace Spinner With Continue Card
+     YOUR REAL REDIRECT LOGIC (UNCHANGED)
   ===================================================== */
+  function buildRedirectUrl() {
+
+    const fn    = (document.getElementById(FIELD_IDS.firstName)?.value || "").trim();
+    const ecid  = (document.getElementById(FIELD_IDS.ecid)?.value || "").trim();
+    const email = (document.getElementById(FIELD_IDS.email)?.value || "").trim();
+    const ns    = (document.getElementById(FIELD_IDS.authId)?.value || "").trim();
+    const wsgV  = (document.getElementById(FIELD_IDS.wsgDrop)?.value || "").trim();
+
+    const hasWSG = (wsgV === "1");
+
+    const returnurl = window.location.origin;
+
+    if (hasWSG && ns) {
+      return `https://account.enr.com/enr_login_welcome?fn=${encodeURIComponent(fn)}&em=${encodeURIComponent(email)}&ns=${encodeURIComponent(ns)}&returnurl=${encodeURIComponent(returnurl)}`;
+    }
+
+    if (ns && !hasWSG) {
+      return `https://account.enr.com/enr_addwsg?r=${encodeURIComponent(ecid)}&returnurl=${encodeURIComponent(returnurl)}`;
+    }
+
+    if (hasWSG && !ns) {
+      return `https://account.enr.com/enr_setup?em=${encodeURIComponent(email)}&returnurl=${encodeURIComponent(returnurl)}&r=${encodeURIComponent(ecid)}`;
+    }
+
+    return `https://account.enr.com/enr_setup?em=${encodeURIComponent(email)}&returnurl=${encodeURIComponent(returnurl)}`;
+  }
+
+  /* =====================================================
+     My Account Button (SEPARATE LOGIC)
+  ===================================================== */
+  function buildEnrMyAccountUrl() {
+    return "https://account.enr.com/enr_myaccount&r=@{encrypted_customer_id}@";
+  }
+
   function replaceWithContinue() {
     const overlay = document.getElementById("loading-overlay");
-
-    // Hide everything visually behind overlay
-    document.querySelectorAll("body > *:not(#loading-overlay)").forEach(el => {
-      el.style.display = "none";
-    });
-
     overlay.innerHTML = "";
 
     const card = document.createElement("div");
@@ -143,7 +142,7 @@
 
     card.innerHTML = `
       <h3>Continue to your account</h3>
-      <p>Your browser blocked an automatic redirect. Click below to proceed.</p>
+      <p>Your browser blocked an automatic redirect.</p>
     `;
 
     const btn = document.createElement("button");
@@ -151,23 +150,14 @@
 
     btn.onclick = function () {
       const accountUrl = buildEnrMyAccountUrl();
-
-      try {
-        if (inIframe()) window.top.location.href = accountUrl;
-        else window.location.href = accountUrl;
-      } catch (e) {
-        window.location.href = accountUrl;
-      }
+      if (inIframe()) window.top.location.href = accountUrl;
+      else window.location.href = accountUrl;
     };
 
     card.appendChild(btn);
     overlay.appendChild(card);
-    btn.focus();
   }
 
-  /* =====================================================
-     Attempt Redirect
-  ===================================================== */
   function attemptRedirect() {
 
     if (testingMode) {
@@ -175,13 +165,12 @@
       return;
     }
 
-    const accountUrl = buildEnrMyAccountUrl();
+    const redirectUrl = buildRedirectUrl(); // 👈 THIS IS YOUR REAL LOGIC
 
     try {
-      if (inIframe()) window.top.location.href = accountUrl;
-      else window.location.href = accountUrl;
+      if (inIframe()) window.top.location.href = redirectUrl;
+      else window.location.href = redirectUrl;
 
-      // If still here after attempt, assume blocked
       setTimeout(() => {
         replaceWithContinue();
       }, 300);
@@ -191,26 +180,9 @@
     }
   }
 
-  /* =====================================================
-     Spinner Animation
-  ===================================================== */
-  function startSpinnerDots() {
-    setInterval(() => {
-      const text = document.getElementById("loading-text");
-      if (!text) return;
-
-      text.dataset.dots = (parseInt(text.dataset.dots || 0) + 1) % 4;
-      text.textContent = "Loading" + ".".repeat(text.dataset.dots);
-    }, 500);
-  }
-
-  /* =====================================================
-     Init
-  ===================================================== */
   function init() {
     injectStyles();
     createOverlay();
-    startSpinnerDots();
     setTimeout(attemptRedirect, 600);
   }
 
