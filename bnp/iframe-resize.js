@@ -4,7 +4,7 @@
   const testingMode = false;
 
   /* =====================================================
-     Inject Styles Dynamically
+     Inject Styles
   ===================================================== */
   function injectStyles() {
     if (document.getElementById("account-overlay-styles")) return;
@@ -114,23 +114,10 @@
   }
 
   /* =====================================================
-     Brand-Aware My Account URL
+     ENR My Account URL (Exact Format Required)
   ===================================================== */
-  function buildMyAccountUrl() {
-    try {
-      const current = new URL(window.location.href);
-
-      let host = current.hostname.replace(/^www\./i, "");
-
-      if (!host.startsWith("account.")) {
-        host = "account." + host;
-      }
-
-      return current.protocol + "//" + host + "/my_account&r=@{encrypted_customer_id}@";
-
-    } catch (e) {
-      return "/my_account&r=@{encrypted_customer_id}@";
-    }
+  function buildEnrMyAccountUrl() {
+    return "https://account.enr.com/enr_myaccount&r=@{encrypted_customer_id}@";
   }
 
   function inIframe() {
@@ -163,7 +150,7 @@
     btn.textContent = "My Account";
 
     btn.onclick = function () {
-      const accountUrl = buildMyAccountUrl();
+      const accountUrl = buildEnrMyAccountUrl();
 
       try {
         if (inIframe()) window.top.location.href = accountUrl;
@@ -182,17 +169,19 @@
      Attempt Redirect
   ===================================================== */
   function attemptRedirect() {
+
     if (testingMode) {
       replaceWithContinue();
       return;
     }
 
-    const accountUrl = buildMyAccountUrl();
+    const accountUrl = buildEnrMyAccountUrl();
 
     try {
       if (inIframe()) window.top.location.href = accountUrl;
       else window.location.href = accountUrl;
 
+      // If still here after attempt, assume blocked
       setTimeout(() => {
         replaceWithContinue();
       }, 300);
