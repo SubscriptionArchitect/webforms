@@ -1,111 +1,179 @@
+
+/*!
+ * BNP iframe autosize (stable + centered width)
+ * - Parent: listens for DF_IFRAME_RESIZE and resizes the correct iframe (via e.source mapping)
+ * - Child: posts DF_IFRAME_RESIZE with debounced + thresholded height (prevents jump)
+ *
+ * Usage:
+ * 1) Include THIS SAME SCRIPT on the PARENT page (the page containing the iframe).
+ * 2) Also include THIS SAME SCRIPT on the IFRAME page (the form page).
+ * 3) Optionally set data-bnp-iframe-resize on the iframe tag (recommended).
+ *
+ * Notes:
+ * - Width: parent enforces a responsive width (min(560px, 92vw)) and centers the iframe.
+ * - Height: buffered + debounced to avoid micro-jitter.
+ */
 (function () {
   "use strict";
 
-  // --- diagnostics (safe to leave on; minimal noise) ---
-  window.__iframeResizeLoaded = true;
-  window.__iframeResizeVersion = "2026-02-17a";
-
-  function log() {
-    try { console.log.apply(console, ["[iframe-resize]"].concat([].slice.call(arguments))); }
-    catch (e) {}
+  // ------------ shared helpers ------------
+  function nowHeight() {
+    var de = document.documentElement;
+    var b = document.body;
+    return Math.max(
+      de ? de.scrollHeight : 0,
+      b ? b.scrollHeight : 0,
+      de ? de.offsetHeight : 0,
+      b ? b.offsetHeight : 0,
+      de ? de.clientHeight : 0,
+      b ? b.clientHeight : 0
+    );
   }
 
-  // Toggle to see logs
-  var DEBUG = false;
+  function asInt(v) {
+    var n = parseInt(v, 10);
+    return isFinite(n) ? n : null;
+  }
 
-  // Allowlist iframe origins (add your hosts)
-  var ALLOWED = {
-    "https://bnp.dragonforms.com": true,
-    "https://account.enr.com": true,
-    "https://subscribe.enr.com": true
-  };
+  // ------------ CHILD (iframe) sender ------------
+  // If we're inside an iframe, send heights to parent.
+  // (Same-origin not required; postMessage is allowed.)
+  var isInIframe = false;
+  try { isInIframe = window.self !== window.top; } catch (e) { isInIframe = true; }
 
-  // Only resize iframes whose src contains one of these markers (prevents resizing ads)
-  var SRC_MARKERS = ["dragoniframe=true", "omedasite="];
+  if (isInIframe) {
+    var CHILD_DEBOUNCE_MS = 140;
+    var CHILD_THRESHOLD_PX = 10;
 
-  function srcLooksRight(src) {
-    if (!src) return false;
-    src = String(src);
-    for (var i = 0; i < SRC_MARKERS.length; i++) {
-      if (src.indexOf(SRC_MARKERS[i]) !== -1) return true;
+    var childLastSent = 0;
+    var childTimer = 0;
+
+    function childPost(h) {
+      try { window.parent.postMessage({ type: "DF_IFRAME_RESIZE", height: h }, "*"); } catch (e) {}
     }
-    return false;
-  }
 
-  function findIframeForSource(srcWin) {
-    var frames = document.querySelectorAll("iframe");
-    for (var i = 0; i < frames.length; i++) {
-      var f = frames[i];
-      try {
-        if (f.contentWindow === srcWin) return f;
-      } catch (e) {}
+    function childSchedule(force) {
+      if (childTimer) return;
+      childTimer = window.setTimeout(function () {
+        childTimer = 0;
+        var h = nowHeight();
+        if (force || !childLastSent || Math.abs(h - childLastSent) >= CHILD_THRESHOLD_PX) {
+          childLastSent = h;
+          childPost(h);
+        }
+      }, CHILD_DEBOUNCE_MS);
     }
-    return null;
+
+    function childKick() {
+      childSchedule(true);
+      setTimeout(function(){ childSchedule(true); }, 250);
+      setTimeout(function(){ childSchedule(true); }, 900);
+      setTimeout(function(){ childSchedule(true); }, 1800);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", childKick);
+    } else {
+      childKick();
+    }
+    window.addEventListener("load", childKick);
+    window.addEventListener("resize", function(){ childSchedule(false); });
+
+    try { new ResizeObserver(function(){ childSchedule(false); }).observe(document.body); } catch (e) {}
+    try { new MutationObserver(function(){ childSchedule(false); }).observe(document.body, {subtree:true, childList:true, attributes:true}); } catch (e) {}
+
+    // Safety pulse (low frequency)
+    setInterval(function(){ childSchedule(false); }, 1800);
   }
 
-  function parseHeight(data) {
-    // Object payload: { type:"DF_IFRAME_RESIZE", height: 967 }
-    if (data && typeof data === "object") {
-      if (data.type === "DF_IFRAME_RESIZE" && data.height != null) {
-        var h = parseInt(data.height, 10);
-        return isFinite(h) ? h : null;
+  // ------------ PARENT listener + iframe styling ------------
+  // If we're NOT in an iframe, we're the parent context.
+  if (!isInIframe) {
+    // Mark for easy verification
+    window.__resizeListenerInstalled = true;
+
+    var PARENT_HEIGHT_BUFFER = 10;     // prevents 1px scrollbars
+    var PARENT_THRESHOLD_PX = 12;      // prevents micro-jitter
+    var PARENT_ENFORCE_MS = 1200;      // brief enforcement window to beat "498px" setters
+    var parentLastApplied = new WeakMap(); // iframe -> px
+
+    // Responsive width (fix "not wide enough")
+    var IFRAME_WIDTH = "min(560px, 92vw)";
+    var IFRAME_MAX_WIDTH = "92vw";
+    var IFRAME_MIN_WIDTH = "320px";
+
+    function parentFindIframeBySource(srcWin) {
+      var iframes = document.querySelectorAll("iframe");
+      for (var i = 0; i < iframes.length; i++) {
+        var f = iframes[i];
+        try {
+          if (f.contentWindow === srcWin) return f;
+        } catch (e) {}
       }
       return null;
     }
 
-    // String payload: "DF_IFRAME_RESIZE:967"
-    if (typeof data === "string") {
-      var m = data.match(/^DF_IFRAME_RESIZE:(\d+)/);
-      if (m) return parseInt(m[1], 10);
+    function parentLooksTarget(iframe) {
+      // Recommended: add data-bnp-iframe-resize to the iframe tag
+      if (iframe.hasAttribute("data-bnp-iframe-resize")) return true;
+
+      // Fallback: only touch likely DF embeds (avoid ads)
+      var src = iframe.getAttribute("src") || iframe.src || "";
+      return /dragoniframe=true|omedasite=|loading\.do|init\.do/i.test(src);
     }
 
-    return null;
+    function parentApplyIframeChrome(iframe) {
+      // Width + centering (fix narrow embed)
+      iframe.style.width = IFRAME_WIDTH;
+      iframe.style.maxWidth = IFRAME_MAX_WIDTH;
+      iframe.style.minWidth = IFRAME_MIN_WIDTH;
+      iframe.style.display = "block";
+      iframe.style.marginLeft = "auto";
+      iframe.style.marginRight = "auto";
+
+      // Clean frame
+      iframe.style.border = "0";
+      iframe.setAttribute("scrolling", "no");
+    }
+
+    function parentEnforceHeight(iframe, px) {
+      var prev = parentLastApplied.get(iframe) || 0;
+      if (prev && Math.abs(px - prev) < PARENT_THRESHOLD_PX) return;
+
+      parentLastApplied.set(iframe, px);
+
+      iframe.style.height = px + "px";
+      iframe.style.minHeight = px + "px";
+
+      // brief enforcement (beats scripts that snap back to 498px)
+      var end = Date.now() + PARENT_ENFORCE_MS;
+      (function tick() {
+        if (Date.now() > end) return;
+        if (iframe.style.height !== px + "px") {
+          iframe.style.height = px + "px";
+          iframe.style.minHeight = px + "px";
+        }
+        setTimeout(tick, 140);
+      })();
+    }
+
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type !== "DF_IFRAME_RESIZE") return;
+
+      var h = asInt(d.height);
+      if (!h || h < 200) return;
+
+      var iframe = parentFindIframeBySource(e.source);
+      if (!iframe) return;
+      if (!parentLooksTarget(iframe)) return;
+
+      parentApplyIframeChrome(iframe);
+
+      var target = h + PARENT_HEIGHT_BUFFER;
+      parentEnforceHeight(iframe, target);
+    }, true);
   }
-
-  // Re-apply height briefly to beat scripts that keep forcing 498px
-  function enforceHeight(iframe, px) {
-    var target = px + 10; // small buffer
-
-    // Apply immediately
-    iframe.style.height = target + "px";
-    iframe.style.minHeight = target + "px";
-    iframe.style.width = "100%";
-    iframe.style.border = "0";
-    iframe.setAttribute("scrolling", "no");
-
-    // Re-apply for 3 seconds (every 150ms)
-    var end = Date.now() + 3000;
-    (function tick() {
-      if (Date.now() > end) return;
-      if (iframe.style.height !== target + "px") {
-        iframe.style.height = target + "px";
-        iframe.style.minHeight = target + "px";
-      }
-      setTimeout(tick, 150);
-    })();
-  }
-
-  window.addEventListener("message", function (e) {
-    if (ALLOWED && !ALLOWED[e.origin]) return;
-
-    var h = parseHeight(e.data);
-    if (!h || h < 200) return;
-
-    var iframe = findIframeForSource(e.source);
-    if (!iframe) {
-      if (DEBUG) log("got resize but couldn't map source→iframe", e.origin, h);
-      return;
-    }
-
-    if (!srcLooksRight(iframe.getAttribute("src") || iframe.src)) {
-      if (DEBUG) log("ignoring iframe (src not marked)", iframe.src);
-      return;
-    }
-
-    enforceHeight(iframe, h);
-
-    if (DEBUG) log("resized", iframe.src, "→", (h + 10) + "px");
-  }, true);
-
-  if (DEBUG) log("loaded", window.__iframeResizeVersion, "on", location.href);
 })();
+
