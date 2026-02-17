@@ -1,8 +1,8 @@
 /* BNP My Account Injector
    - Detects Welcome, <Name>
    - Maps domain → brandcode
-   - Pulls encrypted ID from ?r=
-   - Builds: https://account.brandsite.com/brandcode_myaccount&r=<id>
+   - Uses ?r= if present, else uses data-encrypted="@{encrypted_customer_id}@"
+   - Builds: https://account.brandsite.com/BRAND_myaccount&r=...
 */
 
 (function () {
@@ -12,12 +12,9 @@
   window.__BNP_MY_ACCOUNT__ = true;
 
   var BTN_ID = "bnp-my-account-btn";
+  var WELCOME_LI_SELECTOR = 'li.user-actions__account.user-actions__account-link';
 
-  /* --------------------------------------------------
-     DOMAIN → BRAND CODE MAP
-     Add to this as needed.
-  -------------------------------------------------- */
-
+  // ---------------- DOMAIN → BRAND CODE MAP ----------------
   var BRAND_MAP = {
     "achrnews.com": "NEWS",
     "enr.com": "ENR",
@@ -40,9 +37,19 @@
     "stoneworld.com": "SW"
   };
 
-  /* -------------------------------------------------- */
+  function normalizeHost() {
+    return String(window.location.hostname || "")
+      .toLowerCase()
+      .replace(/^www\./, "");
+  }
 
-  function getEncryptedId() {
+  function getBrandCode() {
+    var host = normalizeHost();
+    if (BRAND_MAP[host]) return BRAND_MAP[host];
+    return host.split(".")[0].toUpperCase();
+  }
+
+  function getEncryptedFromQuery() {
     try {
       var params = new URLSearchParams(window.location.search);
       return params.get("r") || "";
@@ -51,40 +58,31 @@
     }
   }
 
-  function normalizeHost() {
-    var host = window.location.hostname.toLowerCase();
-    host = host.replace(/^www\./, "");
-    return host;
-  }
-
-  function getBrandCode() {
-    var host = normalizeHost();
-
-    if (BRAND_MAP[host]) return BRAND_MAP[host];
-
-    // fallback: use first domain segment uppercase
-    return host.split(".")[0].toUpperCase();
+  function getEncryptedFromLoaderAttr() {
+    var loader = document.getElementById("bnp-myaccount-loader");
+    if (!loader) return "";
+    var v = loader.getAttribute("data-encrypted") || "";
+    return String(v).trim();
   }
 
   function buildAccountUrl() {
-    var brand = getBrandCode();
     var host = normalizeHost();
-    var encrypted = getEncryptedId();
+    var brand = getBrandCode();
 
+    // Prefer real value from URL; otherwise use DF merge token from loader
+    var enc = getEncryptedFromQuery() || getEncryptedFromLoaderAttr();
+
+    // Always include &r= (even if token is blank)
+    // NOTE: your required format uses "&r=" (not "?r=")
     var base = "https://account." + host + "/";
     var path = brand + "_myaccount";
 
-    if (encrypted) {
-      return base + path + "&r=" + encodeURIComponent(encrypted);
-    }
-    return base + path;
+    if (enc) return base + path + "&r=" + encodeURIComponent(enc);
+    return base + path + "&r=";
   }
 
   function injectButton() {
-    var li = document.querySelector(
-      'li.user-actions__account.user-actions__account-link'
-    );
-
+    var li = document.querySelector(WELCOME_LI_SELECTOR);
     if (!li) return;
 
     var txt = (li.textContent || "").trim();
@@ -97,7 +95,6 @@
     btn.href = buildAccountUrl();
     btn.textContent = "My Account";
 
-    // Minimal styling so it looks intentional but brand-neutral
     btn.style.display = "inline-block";
     btn.style.marginTop = "8px";
     btn.style.padding = "8px 12px";
@@ -114,16 +111,13 @@
 
   function watch() {
     injectButton();
-
-    var mo = new MutationObserver(function () {
-      injectButton();
-    });
-
-    mo.observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      characterData: true
-    });
+    try {
+      new MutationObserver(injectButton).observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true
+      });
+    } catch (e) {}
   }
 
   if (document.readyState === "loading") {
@@ -131,5 +125,4 @@
   } else {
     watch();
   }
-
 })();
