@@ -1,7 +1,7 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
    - Listens for {type:"DF_IFRAME_RESIZE", height:n}
-   - Finds the correct iframe by matching e.source -> iframe.contentWindow
-   - Sets a stable, centered width and height (thresholded) to reduce “jumping”
+   - Maps e.source -> iframe.contentWindow (works with multiple iframes)
+   - Applies stable centered width + height (thresholded)
 */
 (function () {
   "use strict";
@@ -9,20 +9,22 @@
   // ---------- CONFIG ----------
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Width controls (tune these)
-  var IFRAME_WIDTH     = "min(460px, 92vw)";  // narrower; raise if you want wider
+  // Width controls (narrow + centered)
+  var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
-  // Height clamp (must match/cover child clamp)
+  // Height clamp (should cover child clamp)
   var MIN_H = 520;
   var MAX_H = 1200;
+
+  // If iframe is a hair too tall, lower this (0, -2, etc.)
+  var PARENT_PAD_PX = 0;
 
   // Jitter control
   var APPLY_THRESHOLD_PX = 14;
 
-  // Optional: restrict who can resize (add hosts you trust)
-  // Leave empty to allow all origins.
+  // Optional: restrict which origins are allowed to resize
   var ALLOWED_ORIGINS = {
     "https://bnp.dragonforms.com": true,
     "https://account.enr.com": true,
@@ -63,10 +65,7 @@
   }
 
   function applyHeight(iframe, h) {
-    var px = clamp(h, MIN_H, MAX_H);
-
-    // Add tiny buffer to avoid 1px scrollbars
-    px = px + 8;
+    var px = clamp(h, MIN_H, MAX_H) + PARENT_PAD_PX;
 
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(px - prev) < APPLY_THRESHOLD_PX) return;
@@ -76,6 +75,7 @@
     iframe.style.minHeight = px + "px";
   }
 
+  // For easy verification in console
   window.__resizeListenerInstalled = true;
 
   window.addEventListener("message", function (e) {
