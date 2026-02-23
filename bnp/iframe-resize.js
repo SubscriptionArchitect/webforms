@@ -1,6 +1,7 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   - Works for inline + modal + any wrapper divs
-   - Multi-brand safe: bnp.dragonforms.com + account.* + subscribe.*
+   Fixes modal bottom whitespace by:
+   - allowing shrink (do not pin minHeight to last applied height)
+   - applying a slightly stronger trim for modal iframes
 */
 (function () {
   "use strict";
@@ -10,7 +11,7 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing (classic)
+  // Modal sizing
   var MODAL_WIDTH     = "min(460px, 92vw)";
   var MODAL_MAX_WIDTH = "92vw";
   var MODAL_MIN_WIDTH = "320px";
@@ -20,8 +21,9 @@
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Height trim to remove the “iframe slightly too tall” gap
-  var PARENT_PAD_PX = -6;
+  // Height trims
+  var INLINE_PAD_PX = -6;
+  var MODAL_PAD_PX  = -10; // trims the “extra” that shows as bottom whitespace in modals
   var APPLY_THRESHOLD_PX = 2;
 
   function isAllowedOrigin(origin) {
@@ -49,17 +51,13 @@
   }
 
   function isOverlayLike(iframe) {
-    // Determine if this iframe is presented as a modal by looking for fixed/high z-index ancestors.
     try {
       var el = iframe;
       for (var i = 0; i < 8 && el; i++) {
         if (el === document.body || el === document.documentElement) break;
-
         var cs = window.getComputedStyle(el);
         if (cs) {
           if (cs.position === "fixed") return true;
-
-          // many overlays are absolute within a fixed backdrop; high z-index is a strong clue
           var zi = parseInt(cs.zIndex, 10);
           if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
         }
@@ -73,19 +71,15 @@
 
   function applyBaseline(iframe) {
     if (!iframe) return;
-
-    // Stop the tiny default iframe
     iframe.style.display = "block";
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
-    // baseline until first message arrives
+    // Only a startup baseline; do NOT keep minHeight tied to updates
     if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
   }
 
-  function applyWidthMode(iframe) {
-    var modalish = isOverlayLike(iframe);
-
+  function applyWidthMode(iframe, modalish) {
     if (modalish) {
       iframe.style.width = MODAL_WIDTH;
       iframe.style.maxWidth = MODAL_MAX_WIDTH;
@@ -101,18 +95,22 @@
     }
   }
 
-  function applyHeight(iframe, h) {
-    var px = h + PARENT_PAD_PX;
+  function applyHeight(iframe, h, modalish) {
+    var pad = modalish ? MODAL_PAD_PX : INLINE_PAD_PX;
+    var px = h + pad;
 
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(px - prev) < APPLY_THRESHOLD_PX) return;
 
     lastApplied.set(iframe, px);
+
+    // Set height only (so it can shrink)
     iframe.style.height = px + "px";
-    iframe.style.minHeight = px + "px";
+
+    // Important: DO NOT pin minHeight to px; that’s what causes “whitespace” on shrink.
+    // Keep it at the initial baseline only.
   }
 
-  // Optional: baseline apply on page load so every iframe looks decent immediately.
   function initBaseline() {
     var frames = document.querySelectorAll("iframe");
     for (var i = 0; i < frames.length; i++) applyBaseline(frames[i]);
@@ -135,8 +133,10 @@
     if (!iframe) return;
 
     applyBaseline(iframe);
-    applyWidthMode(iframe);
-    applyHeight(iframe, h);
+
+    var modalish = isOverlayLike(iframe);
+    applyWidthMode(iframe, modalish);
+    applyHeight(iframe, h, modalish);
   }, true);
 
 })();
