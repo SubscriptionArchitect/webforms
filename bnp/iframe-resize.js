@@ -1,19 +1,16 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   - Doesn't care what div the iframe is in
-   - Always sizes the iframe that posted the message
-   - Auto width mode:
-     * If iframe (or ancestor) is fixed/overlay-ish => modal sizing
-     * Else => inline sizing (100%)
+   - Works for inline + modal + any wrapper divs
+   - Multi-brand safe: bnp.dragonforms.com + account.* + subscribe.*
 */
 (function () {
   "use strict";
 
-  if (window.__bnpIframeResizeInstalled) return;
-  window.__bnpIframeResizeInstalled = true;
+  if (window.__bnpIframeResizeParentInstalled) return;
+  window.__bnpIframeResizeParentInstalled = true;
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing (original intent)
+  // Modal sizing (classic)
   var MODAL_WIDTH     = "min(460px, 92vw)";
   var MODAL_MAX_WIDTH = "92vw";
   var MODAL_MIN_WIDTH = "320px";
@@ -23,11 +20,10 @@
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Height trim (your original approach)
+  // Height trim to remove the “iframe slightly too tall” gap
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
-  // Origin allow (multi-brand safe)
   function isAllowedOrigin(origin) {
     try {
       var u = new URL(origin);
@@ -52,26 +48,22 @@
     return null;
   }
 
-  function isOverlayLike(el) {
-    // Walk up a bit and look for "fixed overlay/modal" characteristics
-    // This avoids needing specific wrapper divs.
+  function isOverlayLike(iframe) {
+    // Determine if this iframe is presented as a modal by looking for fixed/high z-index ancestors.
     try {
-      var cur = el;
-      for (var i = 0; i < 6 && cur; i++) {
-        if (cur === document.body || cur === document.documentElement) break;
-        var cs = window.getComputedStyle(cur);
-        if (!cs) { cur = cur.parentElement; continue; }
+      var el = iframe;
+      for (var i = 0; i < 8 && el; i++) {
+        if (el === document.body || el === document.documentElement) break;
 
-        var pos = cs.position;
-        if (pos === "fixed") return true;
+        var cs = window.getComputedStyle(el);
+        if (cs) {
+          if (cs.position === "fixed") return true;
 
-        // Some modals are absolute inside a fixed backdrop; treat large absolute layers as modal-ish.
-        if (pos === "absolute") {
+          // many overlays are absolute within a fixed backdrop; high z-index is a strong clue
           var zi = parseInt(cs.zIndex, 10);
-          if (isFinite(zi) && zi >= 999) return true;
+          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
         }
-
-        cur = cur.parentElement;
+        el = el.parentElement;
       }
     } catch (e) {}
     return false;
@@ -80,11 +72,14 @@
   var lastApplied = new WeakMap(); // iframe -> px
 
   function applyBaseline(iframe) {
+    if (!iframe) return;
+
+    // Stop the tiny default iframe
     iframe.style.display = "block";
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
-    // Prevent tiny default size before first message / during load
+    // baseline until first message arrives
     if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
   }
 
@@ -117,19 +112,14 @@
     iframe.style.minHeight = px + "px";
   }
 
-  // Baseline apply for any iframe we might resize later (optional but helps)
-  function initAllIframes() {
+  // Optional: baseline apply on page load so every iframe looks decent immediately.
+  function initBaseline() {
     var frames = document.querySelectorAll("iframe");
-    for (var i = 0; i < frames.length; i++) {
-      applyBaseline(frames[i]);
-    }
+    for (var i = 0; i < frames.length; i++) applyBaseline(frames[i]);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initAllIframes);
-  } else {
-    initAllIframes();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initBaseline);
+  else initBaseline();
 
   window.addEventListener("message", function (e) {
     if (!isAllowedOrigin(e.origin)) return;
