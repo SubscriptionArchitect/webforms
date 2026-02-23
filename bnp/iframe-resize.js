@@ -1,43 +1,63 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Supports BOTH:
-   - Inline:  iframe[data-bnp-inline="1"]  => full width
-   - Modal:   iframe[data-bnp-modal="1"]   => constrained modal panel (you control wrapper)
+   Handles inline paywall/article embeds even when not wrapped in #paywall-container.
 */
 (function () {
   "use strict";
 
-  if (window.__bnpIframeResizeParentInstalled) return;
-  window.__bnpIframeResizeParentInstalled = true;
+  if (window.__bnpIframeResizeInstalled) return;
+  window.__bnpIframeResizeInstalled = true;
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Height trim to remove the “iframe too tall” gap
+  // Default “modal-like” sizing
+  var IFRAME_WIDTH     = "min(460px, 92vw)";
+  var IFRAME_MAX_WIDTH = "92vw";
+  var IFRAME_MIN_WIDTH = "320px";
+
+  // Inline embed sizing
+  var INLINE_WIDTH     = "100%";
+  var INLINE_MAX_WIDTH = "100%";
+  var INLINE_MIN_WIDTH = "0";
+
+  // If iframe is still too tall, keep this negative
   var PARENT_PAD_PX = -6;
+
   var APPLY_THRESHOLD_PX = 2;
 
-  // Safer origin allow: bnp.dragonforms.com + any account.* + any subscribe.*
-  function isAllowedOrigin(origin) {
+  var ALLOWED_ORIGINS = {
+    "https://bnp.dragonforms.com": true,
+    "https://account.enr.com": true,
+    "https://subscribe.enr.com": true
+  };
+
+  function isTargetIframeSrc(src) {
+    src = String(src || "");
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|_paywall_|paywall|articlelimit/i.test(src);
+  }
+
+  function isInlineBySrc(src) {
+    src = String(src || "");
+    // Treat paywall/articlelimit as inline by default
+    return /_paywall_|paywall|articlelimit/i.test(src);
+  }
+
+  function isInlineByDom(iframe) {
     try {
-      var u = new URL(origin);
-      var host = (u.hostname || "").toLowerCase();
-      if (host === "bnp.dragonforms.com") return true;
-      if (host.startsWith("account.")) return true;
-      if (host.startsWith("subscribe.")) return true;
-      return false;
+      return !!iframe.closest(
+        "#paywall-container, .olyticsPopupBR, .paywall-container, .paywall, article, " +
+        ".article-body, .article-content, .content, .story-body, .page-content"
+      );
     } catch (e) {
       return false;
     }
   }
 
-  function isTargetIframeSrc(src) {
-    src = String(src || "");
-    return /dragoniframe=true|omedasite=|loading\.do|init\.do|paywall|articlelimit/i.test(src);
+  function isInlineEmbed(iframe) {
+    var src = iframe.getAttribute("src") || iframe.src || "";
+    return isInlineBySrc(src) || isInlineByDom(iframe);
   }
 
-  function toInt(v) {
-    var n = parseInt(v, 10);
-    return isFinite(n) ? n : null;
-  }
+  function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
 
   function findIframeForSource(srcWin) {
     var frames = document.querySelectorAll("iframe");
@@ -48,49 +68,31 @@
     return null;
   }
 
-  function isInline(iframe) {
-    var v = (iframe.getAttribute("data-bnp-inline") || "").toLowerCase();
-    return v === "1" || v === "true" || v === "yes";
-  }
+  var lastApplied = new WeakMap(); // iframe -> px
 
-  function isModal(iframe) {
-    var v = (iframe.getAttribute("data-bnp-modal") || "").toLowerCase();
-    return v === "1" || v === "true" || v === "yes";
-  }
-
-  // Apply baseline “chrome” so iframes never render tiny, and modes never conflict
   function applyChrome(iframe) {
-    if (!iframe) return;
+    var inline = isInlineEmbed(iframe);
+
+    iframe.style.width    = inline ? INLINE_WIDTH    : IFRAME_WIDTH;
+    iframe.style.maxWidth = inline ? INLINE_MAX_WIDTH : IFRAME_MAX_WIDTH;
+    iframe.style.minWidth = inline ? INLINE_MIN_WIDTH : IFRAME_MIN_WIDTH;
 
     iframe.style.display = "block";
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
-    if (isInline(iframe)) {
-      iframe.style.width = "100%";
-      iframe.style.maxWidth = "100%";
-      iframe.style.minWidth = "0";
+    // Key: make sure it actually fills its container
+    if (inline) {
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
-      if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
-      return;
+    } else {
+      iframe.style.marginLeft = "auto";
+      iframe.style.marginRight = "auto";
     }
 
-    if (isModal(iframe)) {
-      // Modal iframe itself should be 100% of its modal panel
-      iframe.style.width = "100%";
-      iframe.style.maxWidth = "100%";
-      iframe.style.minWidth = "0";
-      iframe.style.marginLeft = "0";
-      iframe.style.marginRight = "0";
-      if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
-      return;
-    }
-
-    // If neither marker exists, do nothing (prevents accidental mode switching)
+    // Helpful initial baseline so it isn’t tiny before first message
+    if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
   }
-
-  var lastApplied = new WeakMap();
 
   function applyHeight(iframe, h) {
     var px = h + PARENT_PAD_PX;
@@ -103,20 +105,10 @@
     iframe.style.minHeight = px + "px";
   }
 
-  // Baseline pass on load (so inline doesn't start tiny)
-  function initMarkedIframes() {
-    var frames = document.querySelectorAll('iframe[data-bnp-inline="1"], iframe[data-bnp-modal="1"]');
-    for (var i = 0; i < frames.length; i++) applyChrome(frames[i]);
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initMarkedIframes);
-  } else {
-    initMarkedIframes();
-  }
-
   window.addEventListener("message", function (e) {
-    if (!isAllowedOrigin(e.origin)) return;
+    if (ALLOWED_ORIGINS && Object.keys(ALLOWED_ORIGINS).length) {
+      if (!ALLOWED_ORIGINS[e.origin]) return;
+    }
 
     var d = e.data;
     if (!d || typeof d !== "object") return;
@@ -128,18 +120,10 @@
     var iframe = findIframeForSource(e.source);
     if (!iframe) return;
 
-    // Only act on explicitly marked iframes (prevents unexpected side-effects)
-    if (!isInline(iframe) && !isModal(iframe)) return;
-
     var src = iframe.getAttribute("src") || iframe.src || "";
-    if (src && !isTargetIframeSrc(src)) {
-      // If you want to allow ALL pages to resize, remove this guard.
-      // Keeping it prevents random third-party iframes from being controlled.
-      return;
-    }
+    if (!isTargetIframeSrc(src)) return;
 
     applyChrome(iframe);
     applyHeight(iframe, h);
   }, true);
-
 })();
