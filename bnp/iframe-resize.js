@@ -1,5 +1,5 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Also handles inline article/paywall embeds (e.g. #paywall-container .olyticsPopupBR iframe).
+   Handles inline paywall/article embeds even when not wrapped in #paywall-container.
 */
 (function () {
   "use strict";
@@ -9,17 +9,17 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Default “modal-like” sizing (your existing behavior)
+  // Default “modal-like” sizing
   var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
-  // Inline embed sizing (inside article/paywall containers)
+  // Inline embed sizing
   var INLINE_WIDTH     = "100%";
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // ✅ If iframe is still too tall, this should be negative.
+  // If iframe is still too tall, keep this negative
   var PARENT_PAD_PX = -6;
 
   var APPLY_THRESHOLD_PX = 2;
@@ -35,12 +35,26 @@
     return /dragoniframe=true|omedasite=|loading\.do|init\.do|_paywall_|paywall|articlelimit/i.test(src);
   }
 
-  function isInlineEmbed(iframe) {
+  function isInlineBySrc(src) {
+    src = String(src || "");
+    // Treat paywall/articlelimit as inline by default
+    return /_paywall_|paywall|articlelimit/i.test(src);
+  }
+
+  function isInlineByDom(iframe) {
     try {
-      return !!iframe.closest("#paywall-container, .olyticsPopupBR, .paywall-container, .paywall, article");
+      return !!iframe.closest(
+        "#paywall-container, .olyticsPopupBR, .paywall-container, .paywall, article, " +
+        ".article-body, .article-content, .content, .story-body, .page-content"
+      );
     } catch (e) {
       return false;
     }
+  }
+
+  function isInlineEmbed(iframe) {
+    var src = iframe.getAttribute("src") || iframe.src || "";
+    return isInlineBySrc(src) || isInlineByDom(iframe);
   }
 
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
@@ -59,7 +73,7 @@
   function applyChrome(iframe) {
     var inline = isInlineEmbed(iframe);
 
-    iframe.style.width = inline ? INLINE_WIDTH : IFRAME_WIDTH;
+    iframe.style.width    = inline ? INLINE_WIDTH    : IFRAME_WIDTH;
     iframe.style.maxWidth = inline ? INLINE_MAX_WIDTH : IFRAME_MAX_WIDTH;
     iframe.style.minWidth = inline ? INLINE_MIN_WIDTH : IFRAME_MIN_WIDTH;
 
@@ -67,6 +81,7 @@
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
+    // Key: make sure it actually fills its container
     if (inline) {
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
@@ -74,6 +89,9 @@
       iframe.style.marginLeft = "auto";
       iframe.style.marginRight = "auto";
     }
+
+    // Helpful initial baseline so it isn’t tiny before first message
+    if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
   }
 
   function applyHeight(iframe, h) {
