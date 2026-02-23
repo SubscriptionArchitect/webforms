@@ -1,18 +1,25 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Applies height with a SMALL NEGATIVE PAD to remove the “iframe too tall” gap.
+   Also handles inline article/paywall embeds (e.g. #paywall-container .olyticsPopupBR iframe).
 */
 (function () {
   "use strict";
 
+  if (window.__bnpIframeResizeInstalled) return;
+  window.__bnpIframeResizeInstalled = true;
+
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Width controls (unchanged unless you want to tweak)
+  // Default “modal-like” sizing (your existing behavior)
   var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
+  // Inline embed sizing (inside article/paywall containers)
+  var INLINE_WIDTH     = "100%";
+  var INLINE_MAX_WIDTH = "100%";
+  var INLINE_MIN_WIDTH = "0";
+
   // ✅ If iframe is still too tall, this should be negative.
-  // Start at -6. If still tall, try -8. If it clips, try -4.
   var PARENT_PAD_PX = -6;
 
   var APPLY_THRESHOLD_PX = 2;
@@ -25,7 +32,15 @@
 
   function isTargetIframeSrc(src) {
     src = String(src || "");
-    return /dragoniframe=true|omedasite=|loading\.do|init\.do/i.test(src);
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|_paywall_|paywall|articlelimit/i.test(src);
+  }
+
+  function isInlineEmbed(iframe) {
+    try {
+      return !!iframe.closest("#paywall-container, .olyticsPopupBR, .paywall-container, .paywall, article");
+    } catch (e) {
+      return false;
+    }
   }
 
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
@@ -42,14 +57,23 @@
   var lastApplied = new WeakMap(); // iframe -> px
 
   function applyChrome(iframe) {
-    iframe.style.width = IFRAME_WIDTH;
-    iframe.style.maxWidth = IFRAME_MAX_WIDTH;
-    iframe.style.minWidth = IFRAME_MIN_WIDTH;
+    var inline = isInlineEmbed(iframe);
+
+    iframe.style.width = inline ? INLINE_WIDTH : IFRAME_WIDTH;
+    iframe.style.maxWidth = inline ? INLINE_MAX_WIDTH : IFRAME_MAX_WIDTH;
+    iframe.style.minWidth = inline ? INLINE_MIN_WIDTH : IFRAME_MIN_WIDTH;
+
     iframe.style.display = "block";
-    iframe.style.marginLeft = "auto";
-    iframe.style.marginRight = "auto";
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
+
+    if (inline) {
+      iframe.style.marginLeft = "0";
+      iframe.style.marginRight = "0";
+    } else {
+      iframe.style.marginLeft = "auto";
+      iframe.style.marginRight = "auto";
+    }
   }
 
   function applyHeight(iframe, h) {
@@ -62,8 +86,6 @@
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
-
-  window.__resizeListenerInstalled = true;
 
   window.addEventListener("message", function (e) {
     if (ALLOWED_ORIGINS && Object.keys(ALLOWED_ORIGINS).length) {
