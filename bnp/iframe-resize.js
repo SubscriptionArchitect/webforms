@@ -1,29 +1,24 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Fixes modal bottom whitespace by:
-   - allowing shrink (do not pin minHeight to last applied height)
-   - applying a slightly stronger trim for modal iframes
+   Preserves original modal behavior (no whitespace regression),
+   adds inline full-width ONLY when iframe is explicitly marked.
 */
 (function () {
   "use strict";
 
-  if (window.__bnpIframeResizeParentInstalled) return;
-  window.__bnpIframeResizeParentInstalled = true;
-
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing
-  var MODAL_WIDTH     = "min(460px, 92vw)";
-  var MODAL_MAX_WIDTH = "92vw";
-  var MODAL_MIN_WIDTH = "320px";
+  // Modal sizing (your original)
+  var IFRAME_WIDTH     = "min(460px, 92vw)";
+  var IFRAME_MAX_WIDTH = "92vw";
+  var IFRAME_MIN_WIDTH = "320px";
 
-  // Inline sizing
+  // Inline sizing (only when marked)
   var INLINE_WIDTH     = "100%";
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Height trims
-  var INLINE_PAD_PX = -6;
-  var MODAL_PAD_PX  = -10; // trims the “extra” that shows as bottom whitespace in modals
+  // Same trim behavior you were using
+  var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
   function isAllowedOrigin(origin) {
@@ -31,12 +26,17 @@
       var u = new URL(origin);
       var host = (u.hostname || "").toLowerCase();
       if (host === "bnp.dragonforms.com") return true;
-      if (host.startsWith("account.")) return true;
-      if (host.startsWith("subscribe.")) return true;
+      if (host.indexOf("account.") === 0) return true;
+      if (host.indexOf("subscribe.") === 0) return true;
       return false;
     } catch (e) {
       return false;
     }
+  }
+
+  function isTargetIframeSrc(src) {
+    src = String(src || "");
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|paywall|articlelimit/i.test(src);
   }
 
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
@@ -50,74 +50,56 @@
     return null;
   }
 
-  function isOverlayLike(iframe) {
+  function isInlineMarked(iframe) {
     try {
-      var el = iframe;
-      for (var i = 0; i < 8 && el; i++) {
-        if (el === document.body || el === document.documentElement) break;
-        var cs = window.getComputedStyle(el);
-        if (cs) {
-          if (cs.position === "fixed") return true;
-          var zi = parseInt(cs.zIndex, 10);
-          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
-        }
-        el = el.parentElement;
-      }
+      var v = (iframe.getAttribute("data-bnp-inline") || "").toLowerCase();
+      if (v === "1" || v === "true" || v === "yes") return true;
+
+      // Back-compat: any legacy class containing "paywall-embed"
+      var cls = (iframe.className || "").toLowerCase();
+      if (cls.indexOf("paywall-embed") !== -1) return true;
     } catch (e) {}
     return false;
   }
 
   var lastApplied = new WeakMap(); // iframe -> px
 
-  function applyBaseline(iframe) {
-    if (!iframe) return;
+  function applyChrome(iframe) {
+    var inline = isInlineMarked(iframe);
+
     iframe.style.display = "block";
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
-    // Only a startup baseline; do NOT keep minHeight tied to updates
-    if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
-  }
-
-  function applyWidthMode(iframe, modalish) {
-    if (modalish) {
-      iframe.style.width = MODAL_WIDTH;
-      iframe.style.maxWidth = MODAL_MAX_WIDTH;
-      iframe.style.minWidth = MODAL_MIN_WIDTH;
-      iframe.style.marginLeft = "auto";
-      iframe.style.marginRight = "auto";
-    } else {
+    if (inline) {
       iframe.style.width = INLINE_WIDTH;
       iframe.style.maxWidth = INLINE_MAX_WIDTH;
       iframe.style.minWidth = INLINE_MIN_WIDTH;
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
+      if (!iframe.style.minHeight) iframe.style.minHeight = "260px"; // baseline only
+    } else {
+      // Modal/default behavior (unchanged from your original)
+      iframe.style.width = IFRAME_WIDTH;
+      iframe.style.maxWidth = IFRAME_MAX_WIDTH;
+      iframe.style.minWidth = IFRAME_MIN_WIDTH;
+      iframe.style.marginLeft = "auto";
+      iframe.style.marginRight = "auto";
     }
   }
 
-  function applyHeight(iframe, h, modalish) {
-    var pad = modalish ? MODAL_PAD_PX : INLINE_PAD_PX;
-    var px = h + pad;
+  function applyHeight(iframe, h) {
+    var px = h + PARENT_PAD_PX;
 
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(px - prev) < APPLY_THRESHOLD_PX) return;
 
     lastApplied.set(iframe, px);
 
-    // Set height only (so it can shrink)
+    // Original behavior that you said had no whitespace:
     iframe.style.height = px + "px";
-
-    // Important: DO NOT pin minHeight to px; that’s what causes “whitespace” on shrink.
-    // Keep it at the initial baseline only.
+    iframe.style.minHeight = px + "px";
   }
-
-  function initBaseline() {
-    var frames = document.querySelectorAll("iframe");
-    for (var i = 0; i < frames.length; i++) applyBaseline(frames[i]);
-  }
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initBaseline);
-  else initBaseline();
 
   window.addEventListener("message", function (e) {
     if (!isAllowedOrigin(e.origin)) return;
@@ -132,11 +114,11 @@
     var iframe = findIframeForSource(e.source);
     if (!iframe) return;
 
-    applyBaseline(iframe);
+    var src = iframe.getAttribute("src") || iframe.src || "";
+    if (!isTargetIframeSrc(src)) return;
 
-    var modalish = isOverlayLike(iframe);
-    applyWidthMode(iframe, modalish);
-    applyHeight(iframe, h, modalish);
+    applyChrome(iframe);
+    applyHeight(iframe, h);
   }, true);
 
 })();
