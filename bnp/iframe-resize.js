@@ -1,8 +1,9 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
    - Modal behavior preserved (centered + constrained width)
-   - Inline embeds supported (full width) without breaking modal
-   - Brand-agnostic: use data-bnp-inline="1" for inline embeds
+   - Inline embeds supported (full width)
+   - Brand-agnostic
 */
+
 (function () {
   "use strict";
 
@@ -11,55 +12,88 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing (your original behavior)
+  /* ------------------------------
+     MODAL SIZING (unchanged)
+  ------------------------------ */
   var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
-  // Inline sizing
+  /* ------------------------------
+     INLINE SIZING
+  ------------------------------ */
   var INLINE_WIDTH     = "100%";
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Height trim
-  var PARENT_PAD_PX = -6;
-
+  /* ------------------------------
+     HEIGHT ADJUSTMENT
+  ------------------------------ */
+  var PARENT_PAD_PX = -6;  // adjust if ever slightly tall
   var APPLY_THRESHOLD_PX = 2;
 
-  var ALLOWED_ORIGINS = {
-    "https://bnp.dragonforms.com": true,
-    "https://account.enr.com": true,
-    "https://subscribe.enr.com": true
-  };
+  /* ------------------------------
+     ORIGIN VALIDATION (multi-brand safe)
+     Allows:
+       - bnp.dragonforms.com
+       - any account.<brand>.com
+       - any subscribe.<brand>.com
+  ------------------------------ */
+  function isAllowedOrigin(origin) {
+    try {
+      var url = new URL(origin);
+      var host = url.hostname.toLowerCase();
+
+      if (host === "bnp.dragonforms.com") return true;
+      if (host.startsWith("account.")) return true;
+      if (host.startsWith("subscribe.")) return true;
+
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function isTargetIframeSrc(src) {
     src = String(src || "");
     return /dragoniframe=true|omedasite=|loading\.do|init\.do|_paywall_|paywall|articlelimit/i.test(src);
   }
 
-  function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
+  function toInt(v) {
+    var n = parseInt(v, 10);
+    return isFinite(n) ? n : null;
+  }
 
   function findIframeForSource(srcWin) {
     var frames = document.querySelectorAll("iframe");
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
-      try { if (f.contentWindow === srcWin) return f; } catch (e) {}
+      try {
+        if (f.contentWindow === srcWin) return f;
+      } catch (e) {}
     }
     return null;
   }
 
-  // Inline detection:
-  // 1) Explicit marker (recommended everywhere): data-bnp-inline="1"
-  // 2) DOM context: common inline/embed containers (safe list)
-  // Never uses src to decide inline vs modal (prevents modal breakage).
+  /* ------------------------------
+     INLINE DETECTION
+     - data-bnp-inline="1" (recommended)
+     - any class containing "paywall-embed"
+     - common inline content containers
+  ------------------------------ */
   function isInlineEmbed(iframe) {
     try {
       if (!iframe) return false;
 
+      // Explicit generic marker
       var mark = iframe.getAttribute && (iframe.getAttribute("data-bnp-inline") || "");
       if (mark === "1" || mark === "true" || mark === "yes") return true;
 
-      // DOM-based inline hints (generic, not brand-specific)
+      // Backward compatibility: any class containing paywall-embed
+      var cls = (iframe.className || "").toLowerCase();
+      if (cls.indexOf("paywall-embed") !== -1) return true;
+
+      // DOM context hints
       return !!iframe.closest(
         "#paywall-container," +
         ".paywall-container," +
@@ -80,7 +114,7 @@
     }
   }
 
-  var lastApplied = new WeakMap(); // iframe -> px
+  var lastApplied = new WeakMap();
 
   function applyChrome(iframe) {
     var inline = isInlineEmbed(iframe);
@@ -96,7 +130,7 @@
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
 
-      // Baseline so it never renders tiny before first resize message
+      // Prevent tiny default 300x150 render
       if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
     } else {
       iframe.style.width = IFRAME_WIDTH;
@@ -104,7 +138,6 @@
       iframe.style.minWidth = IFRAME_MIN_WIDTH;
       iframe.style.marginLeft = "auto";
       iframe.style.marginRight = "auto";
-      // No modal baseline min-height (keeps original modal behavior intact)
     }
   }
 
@@ -120,9 +153,8 @@
   }
 
   window.addEventListener("message", function (e) {
-    if (ALLOWED_ORIGINS && Object.keys(ALLOWED_ORIGINS).length) {
-      if (!ALLOWED_ORIGINS[e.origin]) return;
-    }
+
+    if (!isAllowedOrigin(e.origin)) return;
 
     var d = e.data;
     if (!d || typeof d !== "object") return;
@@ -139,5 +171,7 @@
 
     applyChrome(iframe);
     applyHeight(iframe, h);
+
   }, true);
+
 })();
