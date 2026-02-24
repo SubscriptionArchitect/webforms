@@ -1,8 +1,8 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
    - Removes <p> wrapper whitespace/baseline gap.
-   - Keeps iframe width fitting tiny screens (<= 350px).
-   - Prevents mobile bottom-docking by neutralizing flex-end alignment
-     ONLY on the nearest flex overlay wrapper (no fixed/transform meddling).
+   - Width fits tiny screens (<= 350px).
+   - On < 500px wide screens: if the modal is being bottom-docked,
+     force it to the TOP (not the bottom).
 */
 (function () {
   "use strict";
@@ -25,6 +25,11 @@
   // Height trim
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
+
+  // Top offset on mobile (respects iOS safe area if present)
+  function mobileTopOffset() {
+    return "calc(env(safe-area-inset-top, 0px) + 12px)";
+  }
 
   function isAllowedOrigin(origin) {
     try {
@@ -111,13 +116,13 @@
     }
   }
 
-  // Fixes the real “bottom docking” pattern: overlay/backdrop uses flex-end on mobile.
-  // We only adjust the nearest flex container *above* the iframe (and only <500px wide).
-  function fixMobileBottomDocking(iframe) {
+  // On <500px: if an ancestor is bottom-docking via flex-end or fixed bottom,
+  // force top docking. This is targeted and only triggers when that pattern is detected.
+  function forceTopOnSmallScreens(iframe) {
     if (window.innerWidth >= 500) return;
 
     var el = iframe;
-    for (var i = 0; i < 14 && el; i++) {
+    for (var i = 0; i < 16 && el; i++) {
       if (el === document.body || el === document.documentElement) break;
       el = el.parentElement;
       if (!el) break;
@@ -126,22 +131,45 @@
       try { cs = window.getComputedStyle(el); } catch (e) { cs = null; }
       if (!cs) continue;
 
-      // Target flex overlays that push content to bottom.
+      // 1) Flex overlay pushing to bottom
       if (cs.display === "flex") {
         var jc = (cs.justifyContent || "").toLowerCase();
         var ai = (cs.alignItems || "").toLowerCase();
 
-        var isBottom =
-          jc.indexOf("flex-end") !== -1 ||
-          jc.indexOf("end") !== -1 ||
-          ai.indexOf("flex-end") !== -1 ||
-          ai.indexOf("end") !== -1;
+        var bottomDockFlex =
+          jc.indexOf("flex-end") !== -1 || jc === "end" ||
+          ai.indexOf("flex-end") !== -1 || ai === "end";
 
-        // Only intervene if it’s clearly bottom-aligning.
-        if (isBottom) {
-          el.style.justifyContent = "center";
+        if (bottomDockFlex) {
+          el.style.justifyContent = "flex-start";
           el.style.alignItems = "center";
-          if (!el.style.padding) el.style.padding = "12px";
+          el.style.paddingTop = el.style.paddingTop || mobileTopOffset();
+          if (!el.style.paddingLeft) el.style.paddingLeft = "12px";
+          if (!el.style.paddingRight) el.style.paddingRight = "12px";
+          if (!el.style.paddingBottom) el.style.paddingBottom = "12px";
+          // stop after first meaningful fix
+          break;
+        }
+      }
+
+      // 2) Fixed container anchored to bottom
+      // Only act if it's clearly bottom-anchored (computed bottom not auto, and top is auto)
+      if (cs.position === "fixed") {
+        var bottomVal = (cs.bottom || "").toLowerCase();
+        var topVal = (cs.top || "").toLowerCase();
+
+        var isBottomAnchored = bottomVal && bottomVal !== "auto" && bottomVal !== "initial";
+        var isTopAuto = !topVal || topVal === "auto";
+
+        if (isBottomAnchored && isTopAuto) {
+          el.style.top = el.style.top || mobileTopOffset();
+          el.style.bottom = "auto";
+          // keep it from overflowing sideways
+          el.style.left = el.style.left || "50%";
+          if (!el.style.transform) el.style.transform = "translateX(-50%)";
+          el.style.maxWidth = el.style.maxWidth || "calc(100vw - 24px)";
+          el.style.maxHeight = el.style.maxHeight || "calc(100vh - 24px)";
+          // stop after fixing the bottom anchor
           break;
         }
       }
@@ -175,7 +203,7 @@
     iframe.style.marginRight = "auto";
 
     if (modalish) {
-      fixMobileBottomDocking(iframe);
+      forceTopOnSmallScreens(iframe);
     }
   }
 
@@ -190,7 +218,6 @@
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
 
-    // Don’t let it exceed the viewport on small screens
     if (window.innerWidth < 500) {
       iframe.style.maxHeight = "calc(100vh - 24px)";
     } else {
@@ -198,44 +225,36 @@
     }
   }
 
-  window.addEventListener(
-    "message",
-    function (e) {
-      if (!isAllowedOrigin(e.origin)) return;
+  window.addEventListener("message", function (e) {
+    if (!isAllowedOrigin(e.origin)) return;
 
-      var d = e.data;
-      if (!d || typeof d !== "object") return;
-      if (d.type !== MSG_TYPE) return;
+    var d = e.data;
+    if (!d || typeof d !== "object") return;
+    if (d.type !== MSG_TYPE) return;
 
-      var h = toInt(d.height);
-      if (!h || h < 50) return;
+    var h = toInt(d.height);
+    if (!h || h < 50) return;
 
-      var iframe = findIframeForSource(e.source);
-      if (!iframe) return;
+    var iframe = findIframeForSource(e.source);
+    if (!iframe) return;
 
-      var src = iframe.getAttribute("src") || iframe.src || "";
-      if (!isTargetIframeSrc(src)) return;
+    var src = iframe.getAttribute("src") || iframe.src || "";
+    if (!isTargetIframeSrc(src)) return;
 
-      applyChrome(iframe);
-      applyHeight(iframe, h);
-    },
-    true
-  );
+    applyChrome(iframe);
+    applyHeight(iframe, h);
+  }, true);
 
-  // Re-apply chrome on resize/orientation changes (width fitting + bottom dock fix)
-  window.addEventListener(
-    "resize",
-    function () {
-      try {
-        var iframes = document.querySelectorAll("iframe");
-        for (var i = 0; i < iframes.length; i++) {
-          var f = iframes[i];
-          var src = f.getAttribute("src") || f.src || "";
-          if (!isTargetIframeSrc(src)) continue;
-          applyChrome(f);
-        }
-      } catch (e) {}
-    },
-    { passive: true }
-  );
+  window.addEventListener("resize", function () {
+    try {
+      var iframes = document.querySelectorAll("iframe");
+      for (var i = 0; i < iframes.length; i++) {
+        var f = iframes[i];
+        var src = f.getAttribute("src") || f.src || "";
+        if (!isTargetIframeSrc(src)) continue;
+        applyChrome(f);
+      }
+    } catch (e) {}
+  }, { passive: true });
+
 })();
