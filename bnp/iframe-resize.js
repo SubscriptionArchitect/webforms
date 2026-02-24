@@ -1,12 +1,10 @@
-
 /* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
    Performance-safe:
-   - NO MutationObserver (prevents site freezes)
+   - NO MutationObserver
    - Only reacts to postMessage resize + window resize/orientationchange
    Behavior:
-   - Desktop: centered modal, sane width
+   - Desktop: centered modal, WIDE container
    - Mobile: near top with a small gap, centered horizontally
-   - Removes <p> baseline whitespace + kills width=325 traps
 */
 (function () {
   "use strict";
@@ -16,9 +14,9 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Desktop modal width controls
-  var DESKTOP_MODAL_MAX_PX = 760;
-  var DESKTOP_MODAL_WIDTH  = "min(760px, 96vw)";
+  // ✅ Wider desktop modal container
+  var DESKTOP_MODAL_MAX_PX = 980;
+  var DESKTOP_MODAL_WIDTH  = "min(980px, 96vw)";
 
   // Mobile top spacing
   var MOBILE_TOP_GAP_PX = 14;
@@ -74,7 +72,7 @@
       "  display: flex !important;",
       "  flex-direction: column !important;",
       "  align-items: center !important;",
-      "  justify-content: center !important;", /* desktop centered */
+      "  justify-content: center !important;",
       "  padding: 16px !important;",
       "  box-sizing: border-box !important;",
       "  overflow: auto !important;",
@@ -128,7 +126,6 @@
   }
 
   function enforceModalBasics(iframe) {
-    // Only touches the specific modal chain this iframe is inside
     var popup = closest(iframe, ".olyticsPopupBR, .olyticsPopup");
     if (popup) {
       popup.style.setProperty("position", "fixed", "important");
@@ -165,7 +162,6 @@
       modal.style.setProperty("box-sizing", "border-box", "important");
     }
 
-    // Kill width=325 type traps
     try {
       iframe.removeAttribute("width");
       iframe.style.setProperty("width", "100%", "important");
@@ -182,7 +178,6 @@
     iframe.style.overflow = "hidden";
     iframe.setAttribute("scrolling", "no");
 
-    // Inline embeds: responsive
     if (!modalMode) {
       iframe.style.width = "100%";
       iframe.style.maxWidth = "100%";
@@ -191,7 +186,6 @@
       iframe.style.marginRight = "0";
     }
 
-    // Kill <p> baseline gap
     try {
       var p = iframe.parentElement && iframe.parentElement.tagName === "P" ? iframe.parentElement : null;
       if (p) {
@@ -203,6 +197,7 @@
   }
 
   var lastApplied = new WeakMap();
+  var lastModalIframe = null;
 
   function applyHeight(iframe, h) {
     var px = h + PARENT_PAD_PX;
@@ -213,9 +208,6 @@
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
-
-  // Track last modal iframe we touched so we can re-apply on resize without observers
-  var lastModalIframe = null;
 
   window.addEventListener("message", function (e) {
     var d = e.data;
@@ -253,7 +245,6 @@
     } catch (e) {}
   }
 
-  // Re-apply placement on viewport changes (no observer)
   window.addEventListener("resize", function () { reapplyLastModal(); }, { passive: true });
   window.addEventListener("orientationchange", function () { setTimeout(reapplyLastModal, 50); }, { passive: true });
 
