@@ -1,12 +1,11 @@
 /* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
    Fixes:
-   - Olytics forcing ~325px width on desktop (inline styles/attrs) -> override ONLY when modal is skinny
-   - Desktop: centered + wide modal
-   - Mobile (<=520px): pinned near top with a little gap
+   - Modal stretching full height / shoved left
+   - Desktop: centered, normal modal width
+   - Mobile: near top with small gap, centered horizontally
    Safe:
    - CSS injected once
-   - One throttled MutationObserver
-   - DOM work only on resize messages + throttled fixups
+   - Throttled MutationObserver
 */
 (function () {
   "use strict";
@@ -16,15 +15,14 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Mobile spacing from top
+  // Desktop modal width (adjust if desired)
+  var DESKTOP_MODAL_MAX_PX = 760;
+  var DESKTOP_MODAL_WIDTH  = "min(760px, 96vw)";
+
+  // Mobile top spacing
   var MOBILE_TOP_GAP_PX = 14;
 
-  // Desktop widening (only applied if Olytics modal is "skinny")
-  var DESKTOP_MIN_ACCEPTABLE_PX = 520;
-  var DESKTOP_MODAL_WIDTH_CSS   = "min(760px, 96vw)";
-  var DESKTOP_MODAL_MAX_PX      = 760;
-
-  // Height tweak (negative reduces bottom gap)
+  // Height tweak
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
@@ -68,34 +66,68 @@
     if (document.getElementById("bnp-iframe-resize-modal-css")) return;
 
     var css = [
-      "/* BNP iframe-resize modal placement */",
+      "/* BNP iframe-resize: Olytics modal layout guardrails */",
+
+      /* Overlay wrapper: fixed, flex, centered on desktop */
       ".olyticsPopupBR, .olyticsPopup {",
       "  position: fixed !important;",
       "  inset: 0 !important;",
       "  width: 100vw !important;",
       "  height: 100vh !important;",
       "  display: flex !important;",
-      "  align-items: center !important;",     /* desktop centered */
-      "  justify-content: center !important;", /* desktop centered */
+      "  flex-direction: column !important;",
+      "  align-items: center !important;",
+      "  justify-content: center !important;",
       "  padding: 16px !important;",
       "  box-sizing: border-box !important;",
       "  overflow: auto !important;",
       "  -webkit-overflow-scrolling: touch !important;",
       "}",
 
-      "/* Baseline whitespace killer */",
+      /* Modal shell: prevent stretching + force centered width */
+      ".olyticsmodal {",
+      "  display: block !important;",
+      "  align-self: center !important;",
+      "  justify-self: center !important;",
+      "  width: " + DESKTOP_MODAL_WIDTH + " !important;",
+      "  max-width: " + DESKTOP_MODAL_MAX_PX + "px !important;",
+      "  margin-left: auto !important;",
+      "  margin-right: auto !important;",
+      "  height: auto !important;",
+      "  min-height: 0 !important;",
+      "  background: transparent !important;",
+      "  padding: 0 !important;",
+      "  box-shadow: none !important;",
+      "  border-radius: 0 !important;",
+      "  box-sizing: border-box !important;",
+      "}",
+
+      /* If Olytics nests another wrapper inside .olyticsmodal, stop it from stretching */
+      ".olyticsmodal > * {",
+      "  max-width: 100% !important;",
+      "}",
+
+      /* Ensure iframe behaves like a block and fills the modal width (no 325px trap) */
+      ".olyticsmodal iframe {",
+      "  display: block !important;",
+      "  width: 100% !important;",
+      "  max-width: 100% !important;",
+      "  border: 0 !important;",
+      "}",
+
+      /* Kill baseline whitespace from <p> wrappers */
       ".olyticsmodal p { margin: 0 !important; padding: 0 !important; line-height: 0 !important; }",
       "p > iframe { display:block !important; }",
 
-      "/* Always: iframe behaves like a block inside modal */",
-      ".olyticsmodal iframe { display:block !important; border:0 !important; }",
-
-      "/* Mobile: pin near top with a bit of space */",
+      /* Mobile: near top with a little gap, still centered horizontally */
       "@media (max-width: 520px){",
       "  .olyticsPopupBR, .olyticsPopup {",
-      "    align-items: flex-start !important;",
-      "    justify-content: center !important;",
+      "    justify-content: flex-start !important;",
       "    padding: " + MOBILE_TOP_GAP_PX + "px 12px 12px !important;",
+      "  }",
+      "  .olyticsmodal {",
+      "    width: 100% !important;",
+      "    max-width: 100% !important;",
       "  }",
       "}"
     ].join("\n");
@@ -107,58 +139,6 @@
     document.head.appendChild(style);
   }
 
-  function getRectW(el) {
-    try { return Math.floor(el.getBoundingClientRect().width || 0); } catch (e) { return 0; }
-  }
-
-  function widenIfSkinnyDesktop(iframe) {
-    if (isMobile()) return;
-
-    var modal = closest(iframe, ".olyticsmodal") || closest(iframe, "[role='dialog']") || null;
-    if (!modal) return;
-
-    var w = getRectW(modal);
-    if (!w) return;
-
-    // Only intervene if it's clearly "skinny" (your 325px problem)
-    if (w >= DESKTOP_MIN_ACCEPTABLE_PX) return;
-
-    // Remove attribute widths that can hard-lock to 325
-    try {
-      iframe.removeAttribute("width");
-      modal.removeAttribute("width");
-    } catch (e) {}
-
-    // Nuke inline width that Olytics might set
-    try {
-      iframe.style.removeProperty("width");
-      iframe.style.removeProperty("max-width");
-      modal.style.removeProperty("width");
-      modal.style.removeProperty("max-width");
-    } catch (e2) {}
-
-    // Force modal shell wide
-    try {
-      modal.style.setProperty("width", DESKTOP_MODAL_WIDTH_CSS, "important");
-      modal.style.setProperty("max-width", DESKTOP_MODAL_MAX_PX + "px", "important");
-      modal.style.setProperty("margin", "0 auto", "important");
-      modal.style.setProperty("background", "transparent", "important");
-      modal.style.setProperty("box-shadow", "none", "important");
-      modal.style.setProperty("padding", "0", "important");
-      modal.style.setProperty("border-radius", "0", "important");
-      modal.style.setProperty("box-sizing", "border-box", "important");
-    } catch (e3) {}
-
-    // Force iframe to fill modal
-    try {
-      iframe.style.setProperty("display", "block", "important");
-      iframe.style.setProperty("width", "100%", "important");
-      iframe.style.setProperty("max-width", "100%", "important");
-      iframe.style.setProperty("min-width", "0", "important");
-      iframe.style.setProperty("border", "0", "important");
-    } catch (e4) {}
-  }
-
   function enforceOverlayBasics(iframe) {
     injectCssOnce();
 
@@ -167,14 +147,44 @@
       popup.style.setProperty("position", "fixed", "important");
       popup.style.setProperty("inset", "0", "important");
       popup.style.setProperty("display", "flex", "important");
+      popup.style.setProperty("flex-direction", "column", "important");
+      popup.style.setProperty("align-items", "center", "important");
       popup.style.setProperty("overflow", "auto", "important");
       popup.style.setProperty("-webkit-overflow-scrolling", "touch", "important");
       popup.style.setProperty("box-sizing", "border-box", "important");
-      // Alignment is handled by CSS + media query
+
+      if (isMobile()) {
+        popup.style.setProperty("justify-content", "flex-start", "important");
+        popup.style.setProperty("padding", (MOBILE_TOP_GAP_PX + "px 12px 12px"), "important");
+      } else {
+        popup.style.setProperty("justify-content", "center", "important");
+        popup.style.setProperty("padding", "16px", "important");
+      }
     }
 
-    // Fix your skinny desktop issue if present
-    widenIfSkinnyDesktop(iframe);
+    var modal = closest(iframe, ".olyticsmodal");
+    if (modal) {
+      modal.style.setProperty("align-self", "center", "important");
+      modal.style.setProperty("width", isMobile() ? "100%" : DESKTOP_MODAL_WIDTH, "important");
+      modal.style.setProperty("max-width", isMobile() ? "100%" : (DESKTOP_MODAL_MAX_PX + "px"), "important");
+      modal.style.setProperty("margin-left", "auto", "important");
+      modal.style.setProperty("margin-right", "auto", "important");
+      modal.style.setProperty("height", "auto", "important");
+      modal.style.setProperty("min-height", "0", "important");
+      modal.style.setProperty("background", "transparent", "important");
+      modal.style.setProperty("padding", "0", "important");
+      modal.style.setProperty("box-shadow", "none", "important");
+      modal.style.setProperty("border-radius", "0", "important");
+      modal.style.setProperty("box-sizing", "border-box", "important");
+    }
+
+    // Hard override any inline width=325 that keeps getting applied
+    try {
+      iframe.removeAttribute("width");
+      iframe.style.setProperty("width", "100%", "important");
+      iframe.style.setProperty("max-width", "100%", "important");
+      iframe.style.setProperty("display", "block", "important");
+    } catch (e) {}
   }
 
   function normalizeIframeLayout(iframe, modalMode) {
@@ -183,7 +193,7 @@
     iframe.style.overflow = "hidden";
     iframe.setAttribute("scrolling", "no");
 
-    // Inline embeds should be responsive
+    // Inline embeds: responsive
     if (!modalMode) {
       iframe.style.width = "100%";
       iframe.style.maxWidth = "100%";
