@@ -1,45 +1,38 @@
-/* BNP IFRAME RESIZE — PARENT (SITE)
-   Fixes <p> wrapper whitespace around iframes in modals (and anywhere).
+/* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
+   Fix: prevents “modal iframe drops to bottom on mobile”
+   - Detects modal containers (olytics + common overlays) and forces proper centering
+   - Applies iframe sizing without breaking inline embeds
+   - Removes the 10px <p> whitespace issue by forcing iframe display:block and zeroing line-height on immediate parent <p>
 */
 (function () {
   "use strict";
 
-  if (window.__bnpIframeResizeParentInstalled) return;
-  window.__bnpIframeResizeParentInstalled = true;
-
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing (your original)
-  var IFRAME_WIDTH     = "min(460px, 92vw)";
-  var IFRAME_MAX_WIDTH = "92vw";
+  // Keep these modest—brands can override via CSS if needed
   var IFRAME_MIN_WIDTH = "320px";
+  var IFRAME_MAX_WIDTH = "92vw";
 
-  // Inline sizing (only when explicitly marked)
-  var INLINE_WIDTH     = "100%";
-  var INLINE_MAX_WIDTH = "100%";
-  var INLINE_MIN_WIDTH = "0";
+  // Inline embeds can be wider than modal content
+  var INLINE_WIDTH = "100%";
+  var MODAL_WIDTH  = "min(460px, 92vw)";
 
-  // Height trim
+  // Height tweak (negative reduces bottom whitespace)
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
-  function isAllowedOrigin(origin) {
-    try {
-      var u = new URL(origin);
-      var host = (u.hostname || "").toLowerCase();
-      if (host === "bnp.dragonforms.com") return true;
-      if (host.indexOf("account.") === 0) return true;
-      if (host.indexOf("subscribe.") === 0) return true;
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function isTargetIframeSrc(src) {
-    src = String(src || "");
-    return /dragoniframe=true|omedasite=|loading\.do|init\.do|paywall|articlelimit|welcome/i.test(src);
-  }
+  // Origins you expect (add more brand domains if needed)
+  // If you want truly "all brands" without maintenance, set USE_ORIGIN_ALLOWLIST=false.
+  var USE_ORIGIN_ALLOWLIST = false;
+  var ALLOWED_ORIGINS = {
+    "https://bnp.dragonforms.com": true,
+    "https://subscribe.enr.com": true,
+    "https://subscribe.achrnews.com": true,
+    "https://subscribe.architecturalrecord.com": true,
+    "https://subscribe.stoneworld.com": true,
+    "https://account.enr.com": true,
+    "https://account.achrnews.com": true
+  };
 
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
 
@@ -52,112 +45,116 @@
     return null;
   }
 
-  function isInlineMarked(iframe) {
-    try {
-      var v = (iframe.getAttribute("data-bnp-inline") || "").toLowerCase();
-      if (v === "1" || v === "true" || v === "yes") return true;
-
-      // Back-compat: any legacy class containing "paywall-embed"
-      var cls = (iframe.className || "").toLowerCase();
-      if (cls.indexOf("paywall-embed") !== -1) return true;
-    } catch (e) {}
-    return false;
+  function looksLikeDF(src) {
+    src = String(src || "");
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|_subscribe_|_welcome/i.test(src);
   }
 
-  function isOverlayLike(iframe) {
-    try {
-      var el = iframe;
-      for (var i = 0; i < 8 && el; i++) {
-        if (el === document.body || el === document.documentElement) break;
-        var cs = window.getComputedStyle(el);
-        if (cs) {
-          if (cs.position === "fixed") return true;
-          var zi = parseInt(cs.zIndex, 10);
-          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
-        }
-        el = el.parentElement;
-      }
-    } catch (e) {}
-    return false;
+  function closest(el, sel) {
+    while (el && el.nodeType === 1) {
+      if (el.matches(sel)) return el;
+      el = el.parentElement;
+    }
+    return null;
   }
 
-  // ✅ Removes the 8–12px whitespace caused by <p> wrappers / baseline layout
-  function normalizeIframeWrappers(iframe) {
-    // Make iframe a block-level element (no baseline gap)
+  function isInModal(iframe) {
+    // Olytics + common overlay patterns
+    return !!closest(iframe, ".olyticsmodal, .olyticsPopupBR, .olyticsPopup, .modal, .popup, .overlay, [role='dialog']");
+  }
+
+  function modalShell(iframe) {
+    // Prefer the visible “dialog box” element if present
+    return closest(iframe, ".olyticsmodal") ||
+           closest(iframe, "[role='dialog']") ||
+           closest(iframe, ".modal") ||
+           closest(iframe, ".popup") ||
+           closest(iframe, ".overlay") ||
+           closest(iframe, ".olyticsPopupBR") ||
+           null;
+  }
+
+  function normalizeIframeLayout(iframe, modalMode) {
+    // Fix baseline whitespace and <p> gaps
     iframe.style.display = "block";
-    iframe.style.verticalAlign = "top";
-    iframe.style.margin = "0";
-    iframe.style.padding = "0";
     iframe.style.border = "0";
-
-    var p = iframe.parentElement;
-    if (!p) return;
-
-    // If wrapped in a <p>, nuke its default bottom margin and baseline line-height gap
-    var tag = (p.tagName || "").toUpperCase();
-    if (tag === "P") {
-      p.style.display = "block";
-      p.style.margin = "0";
-      p.style.padding = "0";
-      p.style.lineHeight = "0";
-      p.style.fontSize = "0";
-    } else {
-      // Even non-<p> wrappers can cause baseline gaps if they have line-height
-      // Keep this minimal to avoid breaking layouts:
-      if (!p.style.marginBottom) p.style.marginBottom = "0";
-    }
-  }
-
-  var lastApplied = new WeakMap();
-
-  function applyChrome(iframe) {
-    var inline = isInlineMarked(iframe);
-    var modalish = !inline && isOverlayLike(iframe);
-
+    iframe.style.overflow = "hidden";
     iframe.setAttribute("scrolling", "no");
-
-    // Always normalize wrappers to prevent whitespace
-    // (Safe for inline too; removes baseline gaps everywhere)
-    normalizeIframeWrappers(iframe);
-
-    if (inline) {
-      iframe.style.width = INLINE_WIDTH;
-      iframe.style.maxWidth = INLINE_MAX_WIDTH;
-      iframe.style.minWidth = INLINE_MIN_WIDTH;
-      iframe.style.marginLeft = "0";
-      iframe.style.marginRight = "0";
-      if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
-      return;
-    }
-
-    // Modal/default sizing (as originally)
-    iframe.style.width = IFRAME_WIDTH;
     iframe.style.maxWidth = IFRAME_MAX_WIDTH;
     iframe.style.minWidth = IFRAME_MIN_WIDTH;
-    iframe.style.marginLeft = "auto";
-    iframe.style.marginRight = "auto";
 
-    // If it's modal-ish, wrapper normalization is the key fix; nothing else needed.
-    if (modalish) {
-      // no-op; normalizeIframeWrappers already handled the <p> gap
+    // Kill the classic 10px-ish inline gap from line-height / baseline in wrappers
+    try {
+      var p = iframe.parentElement && iframe.parentElement.tagName === "P" ? iframe.parentElement : null;
+      if (p) {
+        p.style.margin = "0";
+        p.style.padding = "0";
+        p.style.lineHeight = "0";
+      }
+    } catch (e) {}
+
+    if (modalMode) {
+      iframe.style.width = MODAL_WIDTH;
+      iframe.style.marginLeft = "auto";
+      iframe.style.marginRight = "auto";
+    } else {
+      iframe.style.width = INLINE_WIDTH;
+      iframe.style.marginLeft = "0";
+      iframe.style.marginRight = "0";
     }
   }
+
+  // Ensures the modal container stays centered on mobile (prevents "drops to bottom")
+  function enforceModalCentering(iframe) {
+    var shell = modalShell(iframe);
+    if (!shell) return;
+
+    // Many modal libs use vertical-align:middle + display: inline-block and a parent table-cell
+    // On mobile that can break and push content down. We force modern centering.
+    // We ONLY touch the immediate overlay-ish parent if it exists.
+    var overlay = closest(shell, ".olyticsPopupBR, .olyticsPopup, .overlay, .modal, [role='dialog']") || shell.parentElement;
+
+    try {
+      shell.style.position = "relative";
+      shell.style.margin = "0";
+      shell.style.maxWidth = "min(520px, 92vw)";
+      shell.style.width = "100%";
+      shell.style.background = "transparent";
+      shell.style.boxShadow = "none";
+      shell.style.padding = "0";
+    } catch (e) {}
+
+    // If we found a likely overlay wrapper, make it a flex center box
+    if (overlay && overlay !== document.body && overlay !== document.documentElement) {
+      try {
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.flexDirection = "column";
+        overlay.style.padding = "16px";
+        overlay.style.boxSizing = "border-box";
+        overlay.style.width = "100%";
+        overlay.style.minHeight = "100vh";
+      } catch (e2) {}
+    }
+  }
+
+  var lastApplied = new WeakMap(); // iframe -> px
 
   function applyHeight(iframe, h) {
     var px = h + PARENT_PAD_PX;
-
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(px - prev) < APPLY_THRESHOLD_PX) return;
 
     lastApplied.set(iframe, px);
-
-    // Preserve your original behavior
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
 
   window.addEventListener("message", function (e) {
-    if (!isAllowedOrigin(e.origin)) return;
+    if (USE_ORIGIN_ALLOWLIST) {
+      if (!ALLOWED_ORIGINS[e.origin]) return;
+    }
 
     var d = e.data;
     if (!d || typeof d !== "object") return;
@@ -170,9 +167,17 @@
     if (!iframe) return;
 
     var src = iframe.getAttribute("src") || iframe.src || "";
-    if (!isTargetIframeSrc(src)) return;
+    if (!looksLikeDF(src)) return;
 
-    applyChrome(iframe);
+    var modalMode = isInModal(iframe);
+
+    // ✅ Keep modal centered on mobile
+    if (modalMode) enforceModalCentering(iframe);
+
+    // ✅ Apply layout defaults (also fixes <p> whitespace)
+    normalizeIframeLayout(iframe, modalMode);
+
+    // ✅ Apply height (with your small negative pad)
     applyHeight(iframe, h);
   }, true);
 
