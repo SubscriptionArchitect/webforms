@@ -1,9 +1,3 @@
-/* BNP IFRAME RESIZE — PARENT (SITE) + OLYTICSMODAL TOP-LOCK HELPER
-   - Removes <p> wrapper whitespace/baseline gap.
-   - Resizes iframe height from DF messages.
-   - Fits width on tiny screens (<= 350px).
-   - On < 500px wide screens: forces .olyticsmodal to stay near the TOP (never bottom-docked).
-*/
 (function () {
   "use strict";
 
@@ -12,17 +6,14 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing: always fits viewport (including <= 350px)
   var MODAL_WIDTH = "min(460px, calc(100vw - 24px))";
   var MODAL_MAX_WIDTH = "calc(100vw - 24px)";
   var MODAL_MIN_WIDTH = "0";
 
-  // Inline sizing (only when explicitly marked)
   var INLINE_WIDTH = "100%";
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Height trim
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
@@ -57,7 +48,9 @@
     var frames = document.querySelectorAll("iframe");
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
-      try { if (f.contentWindow === srcWin) return f; } catch (e) {}
+      try {
+        if (f.contentWindow === srcWin) return f;
+      } catch (e) {}
     }
     return null;
   }
@@ -69,23 +62,6 @@
 
       var cls = (iframe.className || "").toLowerCase();
       if (cls.indexOf("paywall-embed") !== -1) return true;
-    } catch (e) {}
-    return false;
-  }
-
-  function isOverlayLike(iframe) {
-    try {
-      var el = iframe;
-      for (var i = 0; i < 10 && el; i++) {
-        if (el === document.body || el === document.documentElement) break;
-        var cs = window.getComputedStyle(el);
-        if (cs) {
-          if (cs.position === "fixed") return true;
-          var zi = parseInt(cs.zIndex, 10);
-          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
-        }
-        el = el.parentElement;
-      }
     } catch (e) {}
     return false;
   }
@@ -113,29 +89,25 @@
     }
   }
 
-  /* ============================
-     OLYTICSMODAL TOP-LOCK HELPER
-     ============================ */
-
   function ensureOlyticsCss() {
     if (document.getElementById("bnp-olytics-toplock-css")) return;
 
-    var css = ""
-      + "@media (max-width: 499px){\n"
-      + "  .olyticsmodal{\n"
-      + "    position: fixed !important;\n"
-      + "    top: " + mobileTopOffset() + " !important;\n"
-      + "    bottom: auto !important;\n"
-      + "    left: 50% !important;\n"
-      + "    right: auto !important;\n"
-      + "    transform: translateX(-50%) !important;\n"
-      + "    width: " + MODAL_WIDTH + " !important;\n"
-      + "    max-width: " + MODAL_MAX_WIDTH + " !important;\n"
-      + "    max-height: calc(100vh - 24px) !important;\n"
-      + "    overflow: auto !important;\n"
-      + "    margin: 0 !important;\n"
-      + "  }\n"
-      + "}\n";
+    var css =
+      "@media (max-width: 499px){\n" +
+      "  .olyticsmodal{\n" +
+      "    position: fixed !important;\n" +
+      "    top: " + mobileTopOffset() + " !important;\n" +
+      "    bottom: auto !important;\n" +
+      "    left: 50% !important;\n" +
+      "    right: auto !important;\n" +
+      "    transform: translateX(-50%) !important;\n" +
+      "    width: " + MODAL_WIDTH + " !important;\n" +
+      "    max-width: " + MODAL_MAX_WIDTH + " !important;\n" +
+      "    max-height: calc(100vh - 24px) !important;\n" +
+      "    overflow: auto !important;\n" +
+      "    margin: 0 !important;\n" +
+      "  }\n" +
+      "}\n";
 
     var style = document.createElement("style");
     style.id = "bnp-olytics-toplock-css";
@@ -150,7 +122,6 @@
     var m = document.querySelector(".olyticsmodal");
     if (!m) return;
 
-    // Always enforce on mobile (since you explicitly want TOP on <500px)
     m.style.position = "fixed";
     m.style.top = mobileTopOffset();
     m.style.bottom = "auto";
@@ -165,7 +136,12 @@
     m.style.margin = "0";
   }
 
+  var _olyticsInstalled = false;
+
   function installOlyticsTopLockHelper() {
+    if (_olyticsInstalled) return;
+    _olyticsInstalled = true;
+
     ensureOlyticsCss();
     enforceOlyticsTopLock();
 
@@ -173,18 +149,42 @@
     function schedule() {
       if (scheduled) return;
       scheduled = true;
-      setTimeout(function () {
+      requestAnimationFrame(function () {
         scheduled = false;
         ensureOlyticsCss();
         enforceOlyticsTopLock();
-      }, 0);
+      });
     }
 
     window.addEventListener("resize", schedule, { passive: true });
 
-    // Watch for the modal to be inserted or restyled by third-party scripts
     try {
-      var mo = new MutationObserver(schedule);
+      var mo = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var mm = mutations[i];
+          if (mm.type === "childList") {
+            if (mm.addedNodes && mm.addedNodes.length) {
+              schedule();
+              return;
+            }
+            continue;
+          }
+          if (mm.type === "attributes") {
+            var t = mm.target;
+            if (t && t.nodeType === 1) {
+              if (t.classList && t.classList.contains("olyticsmodal")) {
+                schedule();
+                return;
+              }
+              if (t.closest && t.closest(".olyticsmodal")) {
+                schedule();
+                return;
+              }
+            }
+          }
+        }
+      });
+
       mo.observe(document.documentElement, {
         childList: true,
         subtree: true,
@@ -193,10 +193,6 @@
       });
     } catch (e) {}
   }
-
-  /* ============================
-     IFRAME RESIZE HANDLERS
-     ============================ */
 
   var lastApplied = new WeakMap();
 
@@ -243,30 +239,33 @@
     }
   }
 
-  window.addEventListener("message", function (e) {
-    if (!isAllowedOrigin(e.origin)) return;
+  window.addEventListener(
+    "message",
+    function (e) {
+      if (!isAllowedOrigin(e.origin)) return;
 
-    var d = e.data;
-    if (!d || typeof d !== "object") return;
-    if (d.type !== MSG_TYPE) return;
+      var d = e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type !== MSG_TYPE) return;
 
-    var h = toInt(d.height);
-    if (!h || h < 50) return;
+      var h = toInt(d.height);
+      if (!h || h < 50) return;
 
-    var iframe = findIframeForSource(e.source);
-    if (!iframe) return;
+      var iframe = findIframeForSource(e.source);
+      if (!iframe) return;
 
-    var src = iframe.getAttribute("src") || iframe.src || "";
-    if (!isTargetIframeSrc(src)) return;
+      var src = iframe.getAttribute("src") || iframe.src || "";
+      if (!isTargetIframeSrc(src)) return;
 
-    applyChrome(iframe);
-    applyHeight(iframe, h);
+      applyChrome(iframe);
+      applyHeight(iframe, h);
 
-    // Keep the modal top-locked on mobile after any resize message too
-    enforceOlyticsTopLock();
-  }, true);
+      enforceOlyticsTopLock();
+    },
+    true
+  );
 
-  window.addEventListener("resize", function () {
+  function onResize() {
     try {
       var iframes = document.querySelectorAll("iframe");
       for (var i = 0; i < iframes.length; i++) {
@@ -278,14 +277,16 @@
     } catch (e) {}
 
     enforceOlyticsTopLock();
-  }, { passive: true });
+  }
+
+  window.addEventListener("resize", onResize, { passive: true });
 
   function boot() {
     installOlyticsTopLockHelper();
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {
     boot();
   }
