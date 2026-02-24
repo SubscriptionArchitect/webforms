@@ -1,88 +1,15 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   - Works for modals + inline
-   - Multi-brand: bnp.dragonforms.com + account.* + subscribe.*
-   - Fixes <p> wrapper whitespace around iframes (modal bottom gap)
-   - Kills loading-overlay backdrop when showing Continue/message card
+   Fixes <p> wrapper whitespace around iframes in modals (and anywhere).
 */
 (function () {
   "use strict";
 
-  if (window.__bnpSiteScriptInstalled) return;
-  window.__bnpSiteScriptInstalled = true;
-
-  /* =========================
-     PART A — LOADING OVERLAY
-     ========================= */
-
-  // CSS override for cases where dimming/backdrop is applied via ::before/::after
-  (function injectOverlayCSS() {
-    try {
-      var css =
-        "#loading-overlay.is-continue," +
-        "#loading-overlay.is-continue::before," +
-        "#loading-overlay.is-continue::after{" +
-        "background:transparent !important;" +
-        "backdrop-filter:none !important;" +
-        "-webkit-backdrop-filter:none !important;" +
-        "box-shadow:none !important;" +
-        "}" +
-        "#loading-overlay.is-continue{background:transparent !important;}";
-      var style = document.createElement("style");
-      style.type = "text/css";
-      style.appendChild(document.createTextNode(css));
-      document.head.appendChild(style);
-    } catch (e) {}
-  })();
-
-  function killLoadingBackdropIfContinue() {
-    var overlay = document.getElementById("loading-overlay");
-    if (!overlay) return;
-
-    // Primary state flag you showed in your markup
-    var isContinue = overlay.classList.contains("is-continue");
-
-    if (!isContinue) return;
-
-    // Remove backdrop/dimming applied directly to the overlay element
-    overlay.style.background = "transparent";
-    overlay.style.backdropFilter = "none";
-    overlay.style.webkitBackdropFilter = "none";
-    overlay.style.boxShadow = "none";
-
-    // Hide common spinner/loading elements if present
-    overlay.querySelectorAll(
-      ".spinner, .loading-spinner, [data-spinner], .loading-text, [data-loading]"
-    ).forEach(function (el) {
-      el.style.display = "none";
-    });
-
-    // Ensure the message card remains clickable
-    var card = overlay.firstElementChild;
-    if (card) card.style.pointerEvents = "auto";
-    overlay.style.pointerEvents = "auto";
-  }
-
-  // Run now and keep enforcing
-  killLoadingBackdropIfContinue();
-  try {
-    new MutationObserver(function () {
-      killLoadingBackdropIfContinue();
-    }).observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["class", "style", "aria-busy", "aria-hidden"]
-    });
-  } catch (e) {}
-  setInterval(killLoadingBackdropIfContinue, 700);
-
-  /* =========================
-     PART B — IFRAME RESIZE
-     ========================= */
+  if (window.__bnpIframeResizeParentInstalled) return;
+  window.__bnpIframeResizeParentInstalled = true;
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Modal sizing (your original behavior)
+  // Modal sizing (your original)
   var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
@@ -154,8 +81,9 @@
     return false;
   }
 
-  // Removes the 8–12px whitespace caused by <p> wrappers / baseline layout
+  // ✅ Removes the 8–12px whitespace caused by <p> wrappers / baseline layout
   function normalizeIframeWrappers(iframe) {
+    // Make iframe a block-level element (no baseline gap)
     iframe.style.display = "block";
     iframe.style.verticalAlign = "top";
     iframe.style.margin = "0";
@@ -165,6 +93,7 @@
     var p = iframe.parentElement;
     if (!p) return;
 
+    // If wrapped in a <p>, nuke its default bottom margin and baseline line-height gap
     var tag = (p.tagName || "").toUpperCase();
     if (tag === "P") {
       p.style.display = "block";
@@ -172,10 +101,14 @@
       p.style.padding = "0";
       p.style.lineHeight = "0";
       p.style.fontSize = "0";
+    } else {
+      // Even non-<p> wrappers can cause baseline gaps if they have line-height
+      // Keep this minimal to avoid breaking layouts:
+      if (!p.style.marginBottom) p.style.marginBottom = "0";
     }
   }
 
-  var lastApplied = new WeakMap(); // iframe -> px
+  var lastApplied = new WeakMap();
 
   function applyChrome(iframe) {
     var inline = isInlineMarked(iframe);
@@ -183,33 +116,30 @@
 
     iframe.setAttribute("scrolling", "no");
 
-    // Always normalize to prevent wrapper whitespace
-    if (modalish) normalizeIframeWrappers(iframe);
+    // Always normalize wrappers to prevent whitespace
+    // (Safe for inline too; removes baseline gaps everywhere)
+    normalizeIframeWrappers(iframe);
 
     if (inline) {
-      iframe.style.display = "block";
       iframe.style.width = INLINE_WIDTH;
       iframe.style.maxWidth = INLINE_MAX_WIDTH;
       iframe.style.minWidth = INLINE_MIN_WIDTH;
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
-      iframe.style.verticalAlign = "top";
       if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
       return;
     }
 
-    // Modal/default behavior
-    iframe.style.display = "block";
+    // Modal/default sizing (as originally)
     iframe.style.width = IFRAME_WIDTH;
     iframe.style.maxWidth = IFRAME_MAX_WIDTH;
     iframe.style.minWidth = IFRAME_MIN_WIDTH;
     iframe.style.marginLeft = "auto";
     iframe.style.marginRight = "auto";
-    iframe.style.verticalAlign = "top";
 
-    // If modal-ish, wrapper normalization already handled baseline gap
+    // If it's modal-ish, wrapper normalization is the key fix; nothing else needed.
     if (modalish) {
-      // keep as-is
+      // no-op; normalizeIframeWrappers already handled the <p> gap
     }
   }
 
@@ -221,6 +151,7 @@
 
     lastApplied.set(iframe, px);
 
+    // Preserve your original behavior
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
