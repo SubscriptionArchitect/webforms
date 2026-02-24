@@ -1,7 +1,8 @@
 /* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
-   - Desktop/tablet: centered, wider modal
-   - Mobile (<=520px): pinned near top with small spacing
-   - Performance-safe (throttled observer, CSS once, minimal DOM work)
+   Fix: overrides tiny 325px modal width (Olytics/inline styles) by forcing modal+iframe width.
+   - Desktop/tablet: centered, wide modal
+   - Mobile: pinned near top with small spacing
+   - Performance-safe: throttled observer, CSS injected once, minimal DOM work
 */
 (function () {
   "use strict";
@@ -11,13 +12,9 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // ✅ Desktop modal width controls (increase these if you want even wider)
-  var DESKTOP_MODAL_MAX_WIDTH = 680;              // px
-  var DESKTOP_MODAL_WIDTH_CSS = "min(680px, 94vw)";
-
-  // General constraints
-  var IFRAME_MIN_WIDTH = 400;                     // px
-  var INLINE_WIDTH_CSS = "100%";
+  // ✅ Make desktop modal wider
+  var DESKTOP_MODAL_MAX_WIDTH = 760;               // px
+  var DESKTOP_MODAL_WIDTH_CSS = "min(760px, 96vw)";
 
   // Mobile placement spacing
   var MOBILE_TOP_GAP_PX = 14;
@@ -59,35 +56,37 @@
   }
 
   function isInOlyticsModal(iframe) {
-    return !!closest(iframe, ".olyticsPopupBR, .olyticsPopup, .olyticsmodal");
+    return !!closest(iframe, ".olyticsPopupBR, .olyticsPopup, .olyticsmodal, [role='dialog']");
   }
 
   function injectCssOnce() {
     if (document.getElementById("bnp-iframe-resize-modal-css")) return;
 
     var css = [
-      "/* BNP iframe-resize modal placement overrides */",
+      "/* BNP iframe-resize modal placement + width overrides */",
+
+      /* Overlay wrapper: centered desktop, top-ish mobile */
       ".olyticsPopupBR, .olyticsPopup {",
       "  position: fixed !important;",
       "  inset: 0 !important;",
       "  width: 100vw !important;",
       "  height: 100vh !important;",
       "  display: flex !important;",
-      "  padding: 16px !important;",
       "  box-sizing: border-box !important;",
       "  overflow: auto !important;",
       "  -webkit-overflow-scrolling: touch !important;",
-      "  align-items: center !important;",     /* centered desktop */
-      "  justify-content: center !important;", /* centered desktop */
+      "  align-items: center !important;",
+      "  justify-content: center !important;",
+      "  padding: 16px !important;",
       "}",
 
-      "/* Wider modal shell on desktop */",
+      /* Modal shell: WIDE on desktop */
       ".olyticsmodal {",
       "  display: block !important;",
       "  position: relative !important;",
       "  margin: 0 auto !important;",
-      "  max-width: " + DESKTOP_MODAL_MAX_WIDTH + "px !important;",
       "  width: " + DESKTOP_MODAL_WIDTH_CSS + " !important;",
+      "  max-width: " + DESKTOP_MODAL_MAX_WIDTH + "px !important;",
       "  background: transparent !important;",
       "  padding: 0 !important;",
       "  box-shadow: none !important;",
@@ -96,21 +95,20 @@
       "}",
       ".olyticsmodal * { box-sizing: border-box !important; }",
 
-      "/* Make iframe fill the modal width */",
+      /* ✅ Kill ANY inline/attribute widths like width=325 on the iframe */
       ".olyticsmodal iframe {",
       "  display: block !important;",
       "  width: 100% !important;",
       "  max-width: 100% !important;",
-      "  min-width: " + IFRAME_MIN_WIDTH + "px !important;",
+      "  min-width: 0 !important;",
       "  border: 0 !important;",
       "}",
 
-      "/* baseline/paragraph whitespace killer */",
+      /* baseline/paragraph whitespace killer */
       ".olyticsmodal p { margin: 0 !important; padding: 0 !important; line-height: 0 !important; }",
       "p > iframe { display:block !important; }",
 
-      "",
-      "/* MOBILE: PIN NEAR TOP WITH A LITTLE SPACE */",
+      /* Mobile: pinned near top with small gap */
       "@media (max-width: 520px){",
       "  .olyticsPopupBR, .olyticsPopup {",
       "    align-items: flex-start !important;",
@@ -121,9 +119,6 @@
       "    width: 100% !important;",
       "    max-width: 100% !important;",
       "    margin: 0 !important;",
-      "  }",
-      "  .olyticsmodal iframe {",
-      "    min-width: 0 !important;",
       "  }",
       "}"
     ].join("\n");
@@ -142,8 +137,6 @@
     if (popup) {
       popup.style.setProperty("position", "fixed", "important");
       popup.style.setProperty("inset", "0", "important");
-      popup.style.setProperty("width", "100vw", "important");
-      popup.style.setProperty("height", "100vh", "important");
       popup.style.setProperty("display", "flex", "important");
       popup.style.setProperty("overflow", "auto", "important");
       popup.style.setProperty("-webkit-overflow-scrolling", "touch", "important");
@@ -162,22 +155,24 @@
 
     var modal = closest(iframe, ".olyticsmodal");
     if (modal) {
+      modal.style.setProperty("width", isMobile() ? "100%" : DESKTOP_MODAL_WIDTH_CSS, "important");
+      modal.style.setProperty("max-width", isMobile() ? "100%" : (DESKTOP_MODAL_MAX_WIDTH + "px"), "important");
       modal.style.setProperty("background", "transparent", "important");
       modal.style.setProperty("padding", "0", "important");
       modal.style.setProperty("box-shadow", "none", "important");
       modal.style.setProperty("border-radius", "0", "important");
       modal.style.setProperty("box-sizing", "border-box", "important");
-
-      if (isMobile()) {
-        modal.style.setProperty("width", "100%", "important");
-        modal.style.setProperty("max-width", "100%", "important");
-        modal.style.setProperty("margin", "0", "important");
-      } else {
-        modal.style.setProperty("width", DESKTOP_MODAL_WIDTH_CSS, "important");
-        modal.style.setProperty("max-width", DESKTOP_MODAL_MAX_WIDTH + "px", "important");
-        modal.style.setProperty("margin", "0 auto", "important");
-      }
+      modal.style.setProperty("margin", isMobile() ? "0" : "0 auto", "important");
     }
+
+    // ✅ Hard override iframe width (in case inline style keeps getting re-applied)
+    try {
+      iframe.style.setProperty("width", "100%", "important");
+      iframe.style.setProperty("max-width", "100%", "important");
+      iframe.style.setProperty("min-width", "0", "important");
+      iframe.style.setProperty("display", "block", "important");
+      iframe.style.setProperty("border", "0", "important");
+    } catch (e) {}
   }
 
   function normalizeIframeLayout(iframe, modalMode) {
@@ -186,20 +181,16 @@
     iframe.style.overflow = "hidden";
     iframe.setAttribute("scrolling", "no");
 
-    if (modalMode) {
+    // Inline embeds should be full-width; modal is controlled by modal CSS above
+    if (!modalMode) {
       iframe.style.width = "100%";
-      iframe.style.maxWidth = "100%";
-      iframe.style.minWidth = isMobile() ? "0" : (IFRAME_MIN_WIDTH + "px");
-      iframe.style.marginLeft = "0";
-      iframe.style.marginRight = "0";
-    } else {
-      iframe.style.width = INLINE_WIDTH_CSS;
       iframe.style.maxWidth = "100%";
       iframe.style.minWidth = "0";
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
     }
 
+    // Kill <p> baseline gap
     try {
       var p = iframe.parentElement && iframe.parentElement.tagName === "P" ? iframe.parentElement : null;
       if (p) {
@@ -266,9 +257,9 @@
     applyHeight(iframe, h);
   }, true);
 
+  // Boot
   injectCssOnce();
   installObserver();
-
   window.addEventListener("resize", scheduleFixup, { passive: true });
   window.addEventListener("orientationchange", function () { setTimeout(scheduleFixup, 50); }, { passive: true });
 
