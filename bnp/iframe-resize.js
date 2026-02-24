@@ -1,9 +1,13 @@
 /* BNP IFRAME RESIZE — PARENT (SITE)
-   Preserves original modal behavior (no whitespace regression),
-   adds inline full-width ONLY when iframe is explicitly marked.
+   - Works for modals + inline
+   - Fixes modal bottom whitespace by removing iframe baseline gap via JS
+   - Multi-brand: bnp.dragonforms.com + account.* + subscribe.*
 */
 (function () {
   "use strict";
+
+  if (window.__bnpIframeResizeParentInstalled) return;
+  window.__bnpIframeResizeParentInstalled = true;
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
@@ -12,12 +16,12 @@
   var IFRAME_MAX_WIDTH = "92vw";
   var IFRAME_MIN_WIDTH = "320px";
 
-  // Inline sizing (only when marked)
+  // Inline sizing (only when explicitly marked)
   var INLINE_WIDTH     = "100%";
   var INLINE_MAX_WIDTH = "100%";
   var INLINE_MIN_WIDTH = "0";
 
-  // Same trim behavior you were using
+  // Height trim (your original baseline)
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
@@ -62,30 +66,76 @@
     return false;
   }
 
+  function isOverlayLike(iframe) {
+    // "Modal-ish" detection (works without caring which div it’s in)
+    try {
+      var el = iframe;
+      for (var i = 0; i < 8 && el; i++) {
+        if (el === document.body || el === document.documentElement) break;
+        var cs = window.getComputedStyle(el);
+        if (cs) {
+          if (cs.position === "fixed") return true;
+          var zi = parseInt(cs.zIndex, 10);
+          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
+        }
+        el = el.parentElement;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // --- Modal whitespace killer (JS-only) ---
+  function killIframeBaselineGap(iframe) {
+    // 1) Make iframe a true block (removes baseline whitespace)
+    iframe.style.display = "block";
+    iframe.style.verticalAlign = "top";
+    iframe.style.margin = "0";
+    iframe.style.padding = "0";
+    iframe.style.border = "0";
+
+    // 2) Kill baseline/line-height space on the *immediate wrapper*
+    // (This is usually the exact source of the gap in modals)
+    var p = iframe.parentElement;
+    if (p) {
+      // Only touch typography spacing; do NOT nuke padding globally.
+      p.style.lineHeight = "0";
+      p.style.fontSize = "0";
+    }
+  }
+
   var lastApplied = new WeakMap(); // iframe -> px
 
   function applyChrome(iframe) {
     var inline = isInlineMarked(iframe);
+    var modalish = !inline && isOverlayLike(iframe);
 
-    iframe.style.display = "block";
+    // Common
     iframe.style.border = "0";
     iframe.setAttribute("scrolling", "no");
 
     if (inline) {
+      iframe.style.display = "block";
       iframe.style.width = INLINE_WIDTH;
       iframe.style.maxWidth = INLINE_MAX_WIDTH;
       iframe.style.minWidth = INLINE_MIN_WIDTH;
       iframe.style.marginLeft = "0";
       iframe.style.marginRight = "0";
-      if (!iframe.style.minHeight) iframe.style.minHeight = "260px"; // baseline only
-    } else {
-      // Modal/default behavior (unchanged from your original)
-      iframe.style.width = IFRAME_WIDTH;
-      iframe.style.maxWidth = IFRAME_MAX_WIDTH;
-      iframe.style.minWidth = IFRAME_MIN_WIDTH;
-      iframe.style.marginLeft = "auto";
-      iframe.style.marginRight = "auto";
+      iframe.style.verticalAlign = "top";
+      if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
+      return;
     }
+
+    // Modal/default behavior (as you originally had)
+    iframe.style.display = "block";
+    iframe.style.width = IFRAME_WIDTH;
+    iframe.style.maxWidth = IFRAME_MAX_WIDTH;
+    iframe.style.minWidth = IFRAME_MIN_WIDTH;
+    iframe.style.marginLeft = "auto";
+    iframe.style.marginRight = "auto";
+    iframe.style.verticalAlign = "top";
+
+    // If it’s modal-ish, remove the common baseline gap source
+    if (modalish) killIframeBaselineGap(iframe);
   }
 
   function applyHeight(iframe, h) {
@@ -96,7 +146,7 @@
 
     lastApplied.set(iframe, px);
 
-    // Original behavior that you said had no whitespace:
+    // Keep your “original” behavior (no shrink pin changes)
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
