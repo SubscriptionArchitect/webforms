@@ -144,8 +144,6 @@
   }
 
   var _olyticsInstalled = false;
-  var _olyticsObserver = null;
-  var _olyticsWatching = false;
 
   function installOlyticsTopLockHelper() {
     if (_olyticsInstalled) return;
@@ -160,99 +158,47 @@
       scheduled = true;
       requestAnimationFrame(function () {
         scheduled = false;
-        if (window.innerWidth >= 500) return;
         ensureOlyticsCss();
         enforceOlyticsTopLock();
       });
     }
 
-    function startWatchingOlytics() {
-      if (_olyticsWatching) return;
-      if (window.innerWidth >= 500) return;
+    window.addEventListener("resize", schedule, { passive: true });
 
-      var modalNow = document.querySelector(".olyticsmodal");
-      if (!modalNow) return;
-
-      _olyticsWatching = true;
-
-      try {
-        _olyticsObserver = new MutationObserver(function (mutations) {
-          for (var i = 0; i < mutations.length; i++) {
-            var mm = mutations[i];
-
-            if (mm.type === "attributes") {
-              var t = mm.target;
-              if (t && t.nodeType === 1) {
-                if (t.classList && t.classList.contains("olyticsmodal")) {
-                  schedule();
-                  return;
-                }
-                if (t.closest && t.closest(".olyticsmodal")) {
-                  schedule();
-                  return;
-                }
-              }
-              continue;
+    try {
+      var mo = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var mm = mutations[i];
+          if (mm.type === "childList") {
+            if (mm.addedNodes && mm.addedNodes.length) {
+              schedule();
+              return;
             }
-
-            if (mm.type === "childList") {
-              if (mm.addedNodes && mm.addedNodes.length) {
+            continue;
+          }
+          if (mm.type === "attributes") {
+            var t = mm.target;
+            if (t && t.nodeType === 1) {
+              if (t.classList && t.classList.contains("olyticsmodal")) {
+                schedule();
+                return;
+              }
+              if (t.closest && t.closest(".olyticsmodal")) {
                 schedule();
                 return;
               }
             }
           }
-        });
+        }
+      });
 
-        _olyticsObserver.observe(modalNow, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          attributeFilter: ["style", "class"]
-        });
-      } catch (e) {}
-    }
-
-    function stopWatchingOlytics() {
-      if (_olyticsObserver) {
-        try {
-          _olyticsObserver.disconnect();
-        } catch (e) {}
-        _olyticsObserver = null;
-      }
-      _olyticsWatching = false;
-    }
-
-    function onResizeOlytics() {
-      if (window.innerWidth >= 500) {
-        stopWatchingOlytics();
-        return;
-      }
-      ensureOlyticsCss();
-      enforceOlyticsTopLock();
-      startWatchingOlytics();
-    }
-
-    window.addEventListener("resize", onResizeOlytics, { passive: true });
-
-    startWatchingOlytics();
-
-    if (!_olyticsWatching && window.innerWidth < 500) {
-      try {
-        var bootstrapObserver = new MutationObserver(function () {
-          if (window.innerWidth >= 500) return;
-          if (document.querySelector(".olyticsmodal")) {
-            try {
-              bootstrapObserver.disconnect();
-            } catch (e) {}
-            startWatchingOlytics();
-            schedule();
-          }
-        });
-
-        bootstrapObserver.observe(document.documentElement, { childList: true, subtree: true });
-      } catch (e) {}
-    }
+      mo.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["style", "class"]
+      });
+    } catch (e) {}
   }
 
   var lastApplied = new WeakMap();
