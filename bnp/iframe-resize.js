@@ -1,31 +1,33 @@
-
 /* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
-   Performance-safe version (won't freeze the site):
-   - One passive message listener
-   - One MutationObserver (throttled) only to keep Olytics modal pinned to top on mobile
+   Behavior:
+   - Desktop/tablet: Olytics modal centered
+   - Mobile (<=520px): modal pinned near top with a little spacing
+   Performance-safe:
    - CSS injected once
-   - No scanning loops; only touches DOM when a resize message arrives or modal wrapper mutates
+   - One throttled MutationObserver
+   - DOM work only on resize messages or throttled fixups
 */
 (function () {
   "use strict";
 
-  // Prevent double-install
   if (window.__BNP_IFRAME_RESIZE_PARENT_INSTALLED__) return;
   window.__BNP_IFRAME_RESIZE_PARENT_INSTALLED__ = true;
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  var IFRAME_MIN_WIDTH = 320;       // px
-  var MODAL_MAX_WIDTH  = 520;       // px
+  var IFRAME_MIN_WIDTH = 320;     // px
+  var MODAL_MAX_WIDTH  = 520;     // px
   var MODAL_WIDTH_CSS  = "min(520px, 92vw)";
   var INLINE_WIDTH_CSS = "100%";
+
+  // Mobile placement spacing (requested)
+  var MOBILE_TOP_GAP_PX = 14;
 
   // Height tweak (negative reduces bottom gap)
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
-  // Throttle any “fixup” work triggered by mutations
-  var FIXUP_THROTTLE_MS = 120;
+  var FIXUP_THROTTLE_MS = 140;
   var fixupTimer = 0;
 
   function isMobile() {
@@ -41,7 +43,6 @@
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
 
   function findIframeForSource(srcWin) {
-    // Fast path: most pages have 1–2 iframes; NodeList scan is cheap and only on message
     var frames = document.querySelectorAll("iframe");
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
@@ -66,7 +67,7 @@
     if (document.getElementById("bnp-iframe-resize-modal-css")) return;
 
     var css = [
-      "/* BNP iframe-resize modal placement overrides (safe) */",
+      "/* BNP iframe-resize modal placement overrides */",
       ".olyticsPopupBR, .olyticsPopup {",
       "  position: fixed !important;",
       "  inset: 0 !important;",
@@ -77,8 +78,8 @@
       "  box-sizing: border-box !important;",
       "  overflow: auto !important;",
       "  -webkit-overflow-scrolling: touch !important;",
-      "  align-items: center !important;",
-      "  justify-content: center !important;",
+      "  align-items: center !important;",     /* ✅ centered desktop */
+      "  justify-content: center !important;", /* ✅ centered desktop */
       "}",
       ".olyticsmodal {",
       "  display: block !important;",
@@ -103,12 +104,12 @@
       ".olyticsmodal p { margin: 0 !important; padding: 0 !important; line-height: 0 !important; }",
       "p > iframe { display:block !important; }",
       "",
-      "/* ✅ MOBILE: PIN MODAL TO TOP */",
+      "/* ✅ MOBILE: PIN NEAR TOP WITH A LITTLE SPACE */",
       "@media (max-width: 520px){",
       "  .olyticsPopupBR, .olyticsPopup {",
       "    align-items: flex-start !important;",
-      "    justify-content: flex-start !important;",
-      "    padding: 12px !important;",
+      "    justify-content: center !important;", /* keep horizontally centered */
+      "    padding: " + MOBILE_TOP_GAP_PX + "px 12px 12px !important;", /* top gap */
       "  }",
       "  .olyticsmodal {",
       "    width: 100% !important;",
@@ -134,18 +135,23 @@
 
     var popup = closest(iframe, ".olyticsPopupBR, .olyticsPopup");
     if (popup) {
-      // Only set a few critical properties; let CSS handle the rest
       popup.style.setProperty("position", "fixed", "important");
       popup.style.setProperty("inset", "0", "important");
+      popup.style.setProperty("width", "100vw", "important");
+      popup.style.setProperty("height", "100vh", "important");
+      popup.style.setProperty("display", "flex", "important");
       popup.style.setProperty("overflow", "auto", "important");
       popup.style.setProperty("-webkit-overflow-scrolling", "touch", "important");
+      popup.style.setProperty("box-sizing", "border-box", "important");
 
       if (isMobile()) {
         popup.style.setProperty("align-items", "flex-start", "important");
-        popup.style.setProperty("justify-content", "flex-start", "important");
+        popup.style.setProperty("justify-content", "center", "important");
+        popup.style.setProperty("padding", (MOBILE_TOP_GAP_PX + "px 12px 12px"), "important");
       } else {
         popup.style.setProperty("align-items", "center", "important");
         popup.style.setProperty("justify-content", "center", "important");
+        popup.style.setProperty("padding", "16px", "important");
       }
     }
 
@@ -189,7 +195,6 @@
       iframe.style.marginRight = "0";
     }
 
-    // Kill <p> baseline gap
     try {
       var p = iframe.parentElement && iframe.parentElement.tagName === "P" ? iframe.parentElement : null;
       if (p) {
@@ -212,7 +217,6 @@
     iframe.style.minHeight = px + "px";
   }
 
-  // Throttled modal “keep at top” fixup (only if Olytics exists)
   function scheduleFixup() {
     if (fixupTimer) return;
     fixupTimer = window.setTimeout(function () {
@@ -228,14 +232,11 @@
 
   function installObserver() {
     injectCssOnce();
-
-    // Only observe if Olytics is present or likely to appear
     try {
       var mo = new MutationObserver(function () {
         scheduleFixup();
       });
 
-      // Observe minimal surface area: body subtree is enough for modals
       mo.observe(document.body || document.documentElement, {
         childList: true,
         subtree: true,
@@ -244,7 +245,6 @@
     } catch (e) {}
   }
 
-  // Resize messages from the child iframe
   window.addEventListener("message", function (e) {
     var d = e.data;
     if (!d || typeof d !== "object") return;
@@ -270,7 +270,7 @@
   injectCssOnce();
   installObserver();
 
-  // Re-apply on resize/orientation changes (cheap + necessary on iOS)
+  // Re-apply placement on viewport changes (iOS)
   window.addEventListener("resize", scheduleFixup, { passive: true });
   window.addEventListener("orientationchange", function () { setTimeout(scheduleFixup, 50); }, { passive: true });
 
