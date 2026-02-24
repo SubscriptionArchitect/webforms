@@ -1,11 +1,7 @@
 /* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
-   Behavior:
-   - Desktop/tablet: Olytics modal centered
-   - Mobile (<=520px): modal pinned near top with a little spacing
-   Performance-safe:
-   - CSS injected once
-   - One throttled MutationObserver
-   - DOM work only on resize messages or throttled fixups
+   - Desktop/tablet: centered, wider modal
+   - Mobile (<=520px): pinned near top with small spacing
+   - Performance-safe (throttled observer, CSS once, minimal DOM work)
 */
 (function () {
   "use strict";
@@ -15,12 +11,15 @@
 
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  var IFRAME_MIN_WIDTH = 320;     // px
-  var MODAL_MAX_WIDTH  = 520;     // px
-  var MODAL_WIDTH_CSS  = "min(520px, 92vw)";
+  // ✅ Desktop modal width controls (increase these if you want even wider)
+  var DESKTOP_MODAL_MAX_WIDTH = 680;              // px
+  var DESKTOP_MODAL_WIDTH_CSS = "min(680px, 94vw)";
+
+  // General constraints
+  var IFRAME_MIN_WIDTH = 320;                     // px
   var INLINE_WIDTH_CSS = "100%";
 
-  // Mobile placement spacing (requested)
+  // Mobile placement spacing
   var MOBILE_TOP_GAP_PX = 14;
 
   // Height tweak (negative reduces bottom gap)
@@ -78,15 +77,17 @@
       "  box-sizing: border-box !important;",
       "  overflow: auto !important;",
       "  -webkit-overflow-scrolling: touch !important;",
-      "  align-items: center !important;",     /* ✅ centered desktop */
-      "  justify-content: center !important;", /* ✅ centered desktop */
+      "  align-items: center !important;",     /* centered desktop */
+      "  justify-content: center !important;", /* centered desktop */
       "}",
+
+      "/* Wider modal shell on desktop */",
       ".olyticsmodal {",
       "  display: block !important;",
       "  position: relative !important;",
       "  margin: 0 auto !important;",
-      "  max-width: " + MODAL_MAX_WIDTH + "px !important;",
-      "  width: " + MODAL_WIDTH_CSS + " !important;",
+      "  max-width: " + DESKTOP_MODAL_MAX_WIDTH + "px !important;",
+      "  width: " + DESKTOP_MODAL_WIDTH_CSS + " !important;",
       "  background: transparent !important;",
       "  padding: 0 !important;",
       "  box-shadow: none !important;",
@@ -94,22 +95,27 @@
       "  box-sizing: border-box !important;",
       "}",
       ".olyticsmodal * { box-sizing: border-box !important; }",
+
+      "/* Make iframe fill the modal width */",
       ".olyticsmodal iframe {",
       "  display: block !important;",
       "  width: 100% !important;",
-      "  max-width: " + MODAL_WIDTH_CSS + " !important;",
+      "  max-width: 100% !important;",
       "  min-width: " + IFRAME_MIN_WIDTH + "px !important;",
       "  border: 0 !important;",
       "}",
+
+      "/* baseline/paragraph whitespace killer */",
       ".olyticsmodal p { margin: 0 !important; padding: 0 !important; line-height: 0 !important; }",
       "p > iframe { display:block !important; }",
+
       "",
-      "/* ✅ MOBILE: PIN NEAR TOP WITH A LITTLE SPACE */",
+      "/* MOBILE: PIN NEAR TOP WITH A LITTLE SPACE */",
       "@media (max-width: 520px){",
       "  .olyticsPopupBR, .olyticsPopup {",
       "    align-items: flex-start !important;",
-      "    justify-content: center !important;", /* keep horizontally centered */
-      "    padding: " + MOBILE_TOP_GAP_PX + "px 12px 12px !important;", /* top gap */
+      "    justify-content: center !important;",
+      "    padding: " + MOBILE_TOP_GAP_PX + "px 12px 12px !important;",
       "  }",
       "  .olyticsmodal {",
       "    width: 100% !important;",
@@ -118,7 +124,6 @@
       "  }",
       "  .olyticsmodal iframe {",
       "    min-width: 0 !important;",
-      "    max-width: 100% !important;",
       "  }",
       "}"
     ].join("\n");
@@ -168,8 +173,8 @@
         modal.style.setProperty("max-width", "100%", "important");
         modal.style.setProperty("margin", "0", "important");
       } else {
-        modal.style.setProperty("width", MODAL_WIDTH_CSS, "important");
-        modal.style.setProperty("max-width", MODAL_MAX_WIDTH + "px", "important");
+        modal.style.setProperty("width", DESKTOP_MODAL_WIDTH_CSS, "important");
+        modal.style.setProperty("max-width", DESKTOP_MODAL_MAX_WIDTH + "px", "important");
         modal.style.setProperty("margin", "0 auto", "important");
       }
     }
@@ -221,11 +226,9 @@
     if (fixupTimer) return;
     fixupTimer = window.setTimeout(function () {
       fixupTimer = 0;
-
       var iframe = document.querySelector(".olyticsPopupBR iframe, .olyticsPopup iframe, .olyticsmodal iframe");
       if (!iframe) return;
       if (!isInOlyticsModal(iframe)) return;
-
       enforceOlyticsPlacement(iframe);
     }, FIXUP_THROTTLE_MS);
   }
@@ -233,10 +236,7 @@
   function installObserver() {
     injectCssOnce();
     try {
-      var mo = new MutationObserver(function () {
-        scheduleFixup();
-      });
-
+      var mo = new MutationObserver(function () { scheduleFixup(); });
       mo.observe(document.body || document.documentElement, {
         childList: true,
         subtree: true,
@@ -266,11 +266,9 @@
     applyHeight(iframe, h);
   }, true);
 
-  // Boot
   injectCssOnce();
   installObserver();
 
-  // Re-apply placement on viewport changes (iOS)
   window.addEventListener("resize", scheduleFixup, { passive: true });
   window.addEventListener("orientationchange", function () { setTimeout(scheduleFixup, 50); }, { passive: true });
 
