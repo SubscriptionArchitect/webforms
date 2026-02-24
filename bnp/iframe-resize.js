@@ -1,38 +1,118 @@
-/* BNP IFRAME RESIZE — PARENT (SITE) — MODAL + INLINE (ALL BRANDS)
-   Fix: prevents “modal iframe drops to bottom on mobile”
-   - Detects modal containers (olytics + common overlays) and forces proper centering
-   - Applies iframe sizing without breaking inline embeds
-   - Removes the 10px <p> whitespace issue by forcing iframe display:block and zeroing line-height on immediate parent <p>
+/* BNP IFRAME RESIZE — PARENT (SITE)
+   - Works for modals + inline
+   - Multi-brand: bnp.dragonforms.com + account.* + subscribe.*
+   - Fixes <p> wrapper whitespace around iframes (modal bottom gap)
+   - Kills loading-overlay backdrop when showing Continue/message card
 */
 (function () {
   "use strict";
 
+  if (window.__bnpSiteScriptInstalled) return;
+  window.__bnpSiteScriptInstalled = true;
+
+  /* =========================
+     PART A — LOADING OVERLAY
+     ========================= */
+
+  // CSS override for cases where dimming/backdrop is applied via ::before/::after
+  (function injectOverlayCSS() {
+    try {
+      var css =
+        "#loading-overlay.is-continue," +
+        "#loading-overlay.is-continue::before," +
+        "#loading-overlay.is-continue::after{" +
+        "background:transparent !important;" +
+        "backdrop-filter:none !important;" +
+        "-webkit-backdrop-filter:none !important;" +
+        "box-shadow:none !important;" +
+        "}" +
+        "#loading-overlay.is-continue{background:transparent !important;}";
+      var style = document.createElement("style");
+      style.type = "text/css";
+      style.appendChild(document.createTextNode(css));
+      document.head.appendChild(style);
+    } catch (e) {}
+  })();
+
+  function killLoadingBackdropIfContinue() {
+    var overlay = document.getElementById("loading-overlay");
+    if (!overlay) return;
+
+    // Primary state flag you showed in your markup
+    var isContinue = overlay.classList.contains("is-continue");
+
+    if (!isContinue) return;
+
+    // Remove backdrop/dimming applied directly to the overlay element
+    overlay.style.background = "transparent";
+    overlay.style.backdropFilter = "none";
+    overlay.style.webkitBackdropFilter = "none";
+    overlay.style.boxShadow = "none";
+
+    // Hide common spinner/loading elements if present
+    overlay.querySelectorAll(
+      ".spinner, .loading-spinner, [data-spinner], .loading-text, [data-loading]"
+    ).forEach(function (el) {
+      el.style.display = "none";
+    });
+
+    // Ensure the message card remains clickable
+    var card = overlay.firstElementChild;
+    if (card) card.style.pointerEvents = "auto";
+    overlay.style.pointerEvents = "auto";
+  }
+
+  // Run now and keep enforcing
+  killLoadingBackdropIfContinue();
+  try {
+    new MutationObserver(function () {
+      killLoadingBackdropIfContinue();
+    }).observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "aria-busy", "aria-hidden"]
+    });
+  } catch (e) {}
+  setInterval(killLoadingBackdropIfContinue, 700);
+
+  /* =========================
+     PART B — IFRAME RESIZE
+     ========================= */
+
   var MSG_TYPE = "DF_IFRAME_RESIZE";
 
-  // Keep these modest—brands can override via CSS if needed
-  var IFRAME_MIN_WIDTH = "320px";
+  // Modal sizing (your original behavior)
+  var IFRAME_WIDTH     = "min(460px, 92vw)";
   var IFRAME_MAX_WIDTH = "92vw";
+  var IFRAME_MIN_WIDTH = "320px";
 
-  // Inline embeds can be wider than modal content
-  var INLINE_WIDTH = "100%";
-  var MODAL_WIDTH  = "min(460px, 92vw)";
+  // Inline sizing (only when explicitly marked)
+  var INLINE_WIDTH     = "100%";
+  var INLINE_MAX_WIDTH = "100%";
+  var INLINE_MIN_WIDTH = "0";
 
-  // Height tweak (negative reduces bottom whitespace)
+  // Height trim
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
-  // Origins you expect (add more brand domains if needed)
-  // If you want truly "all brands" without maintenance, set USE_ORIGIN_ALLOWLIST=false.
-  var USE_ORIGIN_ALLOWLIST = false;
-  var ALLOWED_ORIGINS = {
-    "https://bnp.dragonforms.com": true,
-    "https://subscribe.enr.com": true,
-    "https://subscribe.achrnews.com": true,
-    "https://subscribe.architecturalrecord.com": true,
-    "https://subscribe.stoneworld.com": true,
-    "https://account.enr.com": true,
-    "https://account.achrnews.com": true
-  };
+  function isAllowedOrigin(origin) {
+    try {
+      var u = new URL(origin);
+      var host = (u.hostname || "").toLowerCase();
+      if (host === "bnp.dragonforms.com") return true;
+      if (host.indexOf("account.") === 0) return true;
+      if (host.indexOf("subscribe.") === 0) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isTargetIframeSrc(src) {
+    src = String(src || "");
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|paywall|articlelimit|welcome/i.test(src);
+  }
 
   function toInt(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
 
@@ -45,116 +125,108 @@
     return null;
   }
 
-  function looksLikeDF(src) {
-    src = String(src || "");
-    return /dragoniframe=true|omedasite=|loading\.do|init\.do|_subscribe_|_welcome/i.test(src);
-  }
-
-  function closest(el, sel) {
-    while (el && el.nodeType === 1) {
-      if (el.matches(sel)) return el;
-      el = el.parentElement;
-    }
-    return null;
-  }
-
-  function isInModal(iframe) {
-    // Olytics + common overlay patterns
-    return !!closest(iframe, ".olyticsmodal, .olyticsPopupBR, .olyticsPopup, .modal, .popup, .overlay, [role='dialog']");
-  }
-
-  function modalShell(iframe) {
-    // Prefer the visible “dialog box” element if present
-    return closest(iframe, ".olyticsmodal") ||
-           closest(iframe, "[role='dialog']") ||
-           closest(iframe, ".modal") ||
-           closest(iframe, ".popup") ||
-           closest(iframe, ".overlay") ||
-           closest(iframe, ".olyticsPopupBR") ||
-           null;
-  }
-
-  function normalizeIframeLayout(iframe, modalMode) {
-    // Fix baseline whitespace and <p> gaps
-    iframe.style.display = "block";
-    iframe.style.border = "0";
-    iframe.style.overflow = "hidden";
-    iframe.setAttribute("scrolling", "no");
-    iframe.style.maxWidth = IFRAME_MAX_WIDTH;
-    iframe.style.minWidth = IFRAME_MIN_WIDTH;
-
-    // Kill the classic 10px-ish inline gap from line-height / baseline in wrappers
+  function isInlineMarked(iframe) {
     try {
-      var p = iframe.parentElement && iframe.parentElement.tagName === "P" ? iframe.parentElement : null;
-      if (p) {
-        p.style.margin = "0";
-        p.style.padding = "0";
-        p.style.lineHeight = "0";
+      var v = (iframe.getAttribute("data-bnp-inline") || "").toLowerCase();
+      if (v === "1" || v === "true" || v === "yes") return true;
+
+      // Back-compat: any legacy class containing "paywall-embed"
+      var cls = (iframe.className || "").toLowerCase();
+      if (cls.indexOf("paywall-embed") !== -1) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function isOverlayLike(iframe) {
+    try {
+      var el = iframe;
+      for (var i = 0; i < 8 && el; i++) {
+        if (el === document.body || el === document.documentElement) break;
+        var cs = window.getComputedStyle(el);
+        if (cs) {
+          if (cs.position === "fixed") return true;
+          var zi = parseInt(cs.zIndex, 10);
+          if (cs.position === "absolute" && isFinite(zi) && zi >= 999) return true;
+        }
+        el = el.parentElement;
       }
     } catch (e) {}
-
-    if (modalMode) {
-      iframe.style.width = MODAL_WIDTH;
-      iframe.style.marginLeft = "auto";
-      iframe.style.marginRight = "auto";
-    } else {
-      iframe.style.width = INLINE_WIDTH;
-      iframe.style.marginLeft = "0";
-      iframe.style.marginRight = "0";
-    }
+    return false;
   }
 
-  // Ensures the modal container stays centered on mobile (prevents "drops to bottom")
-  function enforceModalCentering(iframe) {
-    var shell = modalShell(iframe);
-    if (!shell) return;
+  // Removes the 8–12px whitespace caused by <p> wrappers / baseline layout
+  function normalizeIframeWrappers(iframe) {
+    iframe.style.display = "block";
+    iframe.style.verticalAlign = "top";
+    iframe.style.margin = "0";
+    iframe.style.padding = "0";
+    iframe.style.border = "0";
 
-    // Many modal libs use vertical-align:middle + display: inline-block and a parent table-cell
-    // On mobile that can break and push content down. We force modern centering.
-    // We ONLY touch the immediate overlay-ish parent if it exists.
-    var overlay = closest(shell, ".olyticsPopupBR, .olyticsPopup, .overlay, .modal, [role='dialog']") || shell.parentElement;
+    var p = iframe.parentElement;
+    if (!p) return;
 
-    try {
-      shell.style.position = "relative";
-      shell.style.margin = "0";
-      shell.style.maxWidth = "min(520px, 92vw)";
-      shell.style.width = "100%";
-      shell.style.background = "transparent";
-      shell.style.boxShadow = "none";
-      shell.style.padding = "0";
-    } catch (e) {}
-
-    // If we found a likely overlay wrapper, make it a flex center box
-    if (overlay && overlay !== document.body && overlay !== document.documentElement) {
-      try {
-        overlay.style.display = "flex";
-        overlay.style.alignItems = "center";
-        overlay.style.justifyContent = "center";
-        overlay.style.flexDirection = "column";
-        overlay.style.padding = "16px";
-        overlay.style.boxSizing = "border-box";
-        overlay.style.width = "100%";
-        overlay.style.minHeight = "100vh";
-      } catch (e2) {}
+    var tag = (p.tagName || "").toUpperCase();
+    if (tag === "P") {
+      p.style.display = "block";
+      p.style.margin = "0";
+      p.style.padding = "0";
+      p.style.lineHeight = "0";
+      p.style.fontSize = "0";
     }
   }
 
   var lastApplied = new WeakMap(); // iframe -> px
 
+  function applyChrome(iframe) {
+    var inline = isInlineMarked(iframe);
+    var modalish = !inline && isOverlayLike(iframe);
+
+    iframe.setAttribute("scrolling", "no");
+
+    // Always normalize to prevent wrapper whitespace
+    if (modalish) normalizeIframeWrappers(iframe);
+
+    if (inline) {
+      iframe.style.display = "block";
+      iframe.style.width = INLINE_WIDTH;
+      iframe.style.maxWidth = INLINE_MAX_WIDTH;
+      iframe.style.minWidth = INLINE_MIN_WIDTH;
+      iframe.style.marginLeft = "0";
+      iframe.style.marginRight = "0";
+      iframe.style.verticalAlign = "top";
+      if (!iframe.style.minHeight) iframe.style.minHeight = "260px";
+      return;
+    }
+
+    // Modal/default behavior
+    iframe.style.display = "block";
+    iframe.style.width = IFRAME_WIDTH;
+    iframe.style.maxWidth = IFRAME_MAX_WIDTH;
+    iframe.style.minWidth = IFRAME_MIN_WIDTH;
+    iframe.style.marginLeft = "auto";
+    iframe.style.marginRight = "auto";
+    iframe.style.verticalAlign = "top";
+
+    // If modal-ish, wrapper normalization already handled baseline gap
+    if (modalish) {
+      // keep as-is
+    }
+  }
+
   function applyHeight(iframe, h) {
     var px = h + PARENT_PAD_PX;
+
     var prev = lastApplied.get(iframe) || 0;
     if (prev && Math.abs(px - prev) < APPLY_THRESHOLD_PX) return;
 
     lastApplied.set(iframe, px);
+
     iframe.style.height = px + "px";
     iframe.style.minHeight = px + "px";
   }
 
   window.addEventListener("message", function (e) {
-    if (USE_ORIGIN_ALLOWLIST) {
-      if (!ALLOWED_ORIGINS[e.origin]) return;
-    }
+    if (!isAllowedOrigin(e.origin)) return;
 
     var d = e.data;
     if (!d || typeof d !== "object") return;
@@ -167,17 +239,9 @@
     if (!iframe) return;
 
     var src = iframe.getAttribute("src") || iframe.src || "";
-    if (!looksLikeDF(src)) return;
+    if (!isTargetIframeSrc(src)) return;
 
-    var modalMode = isInModal(iframe);
-
-    // ✅ Keep modal centered on mobile
-    if (modalMode) enforceModalCentering(iframe);
-
-    // ✅ Apply layout defaults (also fixes <p> whitespace)
-    normalizeIframeLayout(iframe, modalMode);
-
-    // ✅ Apply height (with your small negative pad)
+    applyChrome(iframe);
     applyHeight(iframe, h);
   }, true);
 
