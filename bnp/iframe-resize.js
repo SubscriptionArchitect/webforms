@@ -16,7 +16,7 @@
   var DESKTOP_MODAL_WIDTH_CSS = "min(680px, 94vw)";
 
   // General constraints
-  var IFRAME_MIN_WIDTH = 320;                     // px
+  var IFRAME_MIN_WIDTH = 400;                     // px
   var INLINE_WIDTH_CSS = "100%";
 
   // Mobile placement spacing
