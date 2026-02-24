@@ -21,29 +21,22 @@
     return "calc(env(safe-area-inset-top, 0px) + 12px)";
   }
 
-  function hostStartsWithAccountOrSubscribe(host) {
-    host = String(host || "").toLowerCase();
-    return host.indexOf("account.") === 0 || host.indexOf("subscribe.") === 0;
-  }
-
-  function tryParseUrl(u) {
+  function isAllowedOrigin(origin) {
     try {
-      return new URL(u, window.location.href);
+      var u = new URL(origin);
+      var host = (u.hostname || "").toLowerCase();
+      if (host === "bnp.dragonforms.com") return true;
+      if (host.indexOf("account.") === 0) return true;
+      if (host.indexOf("subscribe.") === 0) return true;
+      return false;
     } catch (e) {
-      return null;
+      return false;
     }
   }
 
-  function isAllowedOrigin(origin) {
-    var u = tryParseUrl(origin);
-    if (!u) return false;
-    return hostStartsWithAccountOrSubscribe(u.hostname);
-  }
-
   function isTargetIframeSrc(src) {
-    var u = tryParseUrl(src);
-    if (!u) return false;
-    return hostStartsWithAccountOrSubscribe(u.hostname);
+    src = String(src || "");
+    return /dragoniframe=true|omedasite=|loading\.do|init\.do|paywall|articlelimit|welcome/i.test(src);
   }
 
   function toInt(v) {
