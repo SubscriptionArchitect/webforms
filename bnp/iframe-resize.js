@@ -107,6 +107,23 @@
       "    overflow: auto !important;\n" +
       "    margin: 0 !important;\n" +
       "  }\n" +
+      "  /* Fix close button positioning on mobile */\n" +
+      "  .olyticsmodal .close-olyticsmodal {\n" +
+      "    position: sticky !important;\n" +
+      "    top: 0 !important;\n" +
+      "    right: 0 !important;\n" +
+      "    display: block !important;\n" +
+      "    width: 100% !important;\n" +
+      "    text-align: right !important;\n" +
+      "    padding: 8px 12px !important;\n" +
+      "    box-sizing: border-box !important;\n" +
+      "    background: rgba(255, 255, 255, 0.95) !important;\n" +
+      "    z-index: 10 !important;\n" +
+      "    margin: 0 !important;\n" +
+      "    font-size: 14px !important;\n" +
+      "    color: #333 !important;\n" +
+      "    text-decoration: none !important;\n" +
+      "  }\n" +
       "}\n";
 
     var style = document.createElement("style");
@@ -134,6 +151,26 @@
     m.style.maxHeight = "calc(100vh - 24px)";
     m.style.overflow = "auto";
     m.style.margin = "0";
+
+    // Ensure close button is properly positioned
+    var closeBtn = m.querySelector(".close-olyticsmodal");
+    if (closeBtn) {
+      // Move close button to be first child if it isn't already
+      if (m.firstElementChild !== closeBtn) {
+        m.insertBefore(closeBtn, m.firstElementChild);
+      }
+      closeBtn.style.position = "sticky";
+      closeBtn.style.top = "0";
+      closeBtn.style.right = "0";
+      closeBtn.style.display = "block";
+      closeBtn.style.width = "100%";
+      closeBtn.style.textAlign = "right";
+      closeBtn.style.padding = "8px 12px";
+      closeBtn.style.boxSizing = "border-box";
+      closeBtn.style.background = "rgba(255, 255, 255, 0.95)";
+      closeBtn.style.zIndex = "10";
+      closeBtn.style.margin = "0";
+    }
   }
 
   var _olyticsInstalled = false;
