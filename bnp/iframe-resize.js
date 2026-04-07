@@ -17,6 +17,9 @@
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
+  // Track which modals contain managed iframes
+  var managedModals = new WeakSet();
+
   function mobileTopOffset() {
     return "calc(env(safe-area-inset-top, 0px) + 12px)";
   }
@@ -94,7 +97,7 @@
 
     var css =
       "@media (max-width: 499px){\n" +
-      "  .olyticsmodal{\n" +
+      "  .olyticsmodal.bnp-managed-modal{\n" +
       "    position: fixed !important;\n" +
       "    top: " + mobileTopOffset() + " !important;\n" +
       "    bottom: auto !important;\n" +
@@ -107,23 +110,6 @@
       "    overflow: auto !important;\n" +
       "    margin: 0 !important;\n" +
       "  }\n" +
-      "  /* Fix close button positioning on mobile */\n" +
-      "  .olyticsmodal .close-olyticsmodal {\n" +
-      "    position: sticky !important;\n" +
-      "    top: 0 !important;\n" +
-      "    right: 0 !important;\n" +
-      "    display: block !important;\n" +
-      "    width: 100% !important;\n" +
-      "    text-align: right !important;\n" +
-      "    padding: 8px 12px !important;\n" +
-      "    box-sizing: border-box !important;\n" +
-      "    background: rgba(255, 255, 255, 0.95) !important;\n" +
-      "    z-index: 10 !important;\n" +
-      "    margin: 0 !important;\n" +
-      "    font-size: 14px !important;\n" +
-      "    color: #333 !important;\n" +
-      "    text-decoration: none !important;\n" +
-      "  }\n" +
       "}\n";
 
     var style = document.createElement("style");
@@ -133,43 +119,28 @@
     document.head.appendChild(style);
   }
 
-  function enforceOlyticsTopLock() {
+  function enforceOlyticsTopLock(modal) {
     if (window.innerWidth >= 500) return;
+    if (!modal || !managedModals.has(modal)) return;
 
-    var m = document.querySelector(".olyticsmodal");
-    if (!m) return;
+    modal.style.position = "fixed";
+    modal.style.top = mobileTopOffset();
+    modal.style.bottom = "auto";
+    modal.style.left = "50%";
+    modal.style.right = "auto";
+    modal.style.transform = "translateX(-50%)";
+    modal.style.width = MODAL_WIDTH;
+    modal.style.maxWidth = MODAL_MAX_WIDTH;
+    modal.style.minWidth = MODAL_MIN_WIDTH;
+    modal.style.maxHeight = "calc(100vh - 24px)";
+    modal.style.overflow = "auto";
+    modal.style.margin = "0";
+  }
 
-    m.style.position = "fixed";
-    m.style.top = mobileTopOffset();
-    m.style.bottom = "auto";
-    m.style.left = "50%";
-    m.style.right = "auto";
-    m.style.transform = "translateX(-50%)";
-    m.style.width = MODAL_WIDTH;
-    m.style.maxWidth = MODAL_MAX_WIDTH;
-    m.style.minWidth = MODAL_MIN_WIDTH;
-    m.style.maxHeight = "calc(100vh - 24px)";
-    m.style.overflow = "auto";
-    m.style.margin = "0";
-
-    // Ensure close button is properly positioned
-    var closeBtn = m.querySelector(".close-olyticsmodal");
-    if (closeBtn) {
-      // Move close button to be first child if it isn't already
-      if (m.firstElementChild !== closeBtn) {
-        m.insertBefore(closeBtn, m.firstElementChild);
-      }
-      closeBtn.style.position = "sticky";
-      closeBtn.style.top = "0";
-      closeBtn.style.right = "0";
-      closeBtn.style.display = "block";
-      closeBtn.style.width = "100%";
-      closeBtn.style.textAlign = "right";
-      closeBtn.style.padding = "8px 12px";
-      closeBtn.style.boxSizing = "border-box";
-      closeBtn.style.background = "rgba(255, 255, 255, 0.95)";
-      closeBtn.style.zIndex = "10";
-      closeBtn.style.margin = "0";
+  function enforceAllManagedModals() {
+    var modals = document.querySelectorAll(".olyticsmodal.bnp-managed-modal");
+    for (var i = 0; i < modals.length; i++) {
+      enforceOlyticsTopLock(modals[i]);
     }
   }
 
@@ -180,7 +151,6 @@
     _olyticsInstalled = true;
 
     ensureOlyticsCss();
-    enforceOlyticsTopLock();
 
     var scheduled = false;
     function schedule() {
@@ -188,8 +158,7 @@
       scheduled = true;
       requestAnimationFrame(function () {
         scheduled = false;
-        ensureOlyticsCss();
-        enforceOlyticsTopLock();
+        enforceAllManagedModals();
       });
     }
 
@@ -209,11 +178,11 @@
           if (mm.type === "attributes") {
             var t = mm.target;
             if (t && t.nodeType === 1) {
-              if (t.classList && t.classList.contains("olyticsmodal")) {
+              if (t.classList && t.classList.contains("bnp-managed-modal")) {
                 schedule();
                 return;
               }
-              if (t.closest && t.closest(".olyticsmodal")) {
+              if (t.closest && t.closest(".bnp-managed-modal")) {
                 schedule();
                 return;
               }
@@ -276,6 +245,15 @@
     }
   }
 
+  function markModalAsManaged(iframe) {
+    var modal = iframe.closest(".olyticsmodal");
+    if (modal && !managedModals.has(modal)) {
+      managedModals.add(modal);
+      modal.classList.add("bnp-managed-modal");
+    }
+    return modal;
+  }
+
   window.addEventListener(
     "message",
     function (e) {
@@ -294,10 +272,16 @@
       var src = iframe.getAttribute("src") || iframe.src || "";
       if (!isTargetIframeSrc(src)) return;
 
+      // Mark the parent modal as managed (if it exists)
+      var modal = markModalAsManaged(iframe);
+
       applyChrome(iframe);
       applyHeight(iframe, h);
 
-      enforceOlyticsTopLock();
+      // Only enforce on this specific managed modal
+      if (modal) {
+        enforceOlyticsTopLock(modal);
+      }
     },
     true
   );
@@ -313,7 +297,7 @@
       }
     } catch (e) {}
 
-    enforceOlyticsTopLock();
+    enforceAllManagedModals();
   }
 
   window.addEventListener("resize", onResize, { passive: true });
