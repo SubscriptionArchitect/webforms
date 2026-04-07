@@ -17,7 +17,6 @@
   var PARENT_PAD_PX = -6;
   var APPLY_THRESHOLD_PX = 2;
 
-  // Track which modals contain managed iframes
   var managedModals = new WeakSet();
 
   function mobileTopOffset() {
@@ -272,13 +271,11 @@
       var src = iframe.getAttribute("src") || iframe.src || "";
       if (!isTargetIframeSrc(src)) return;
 
-      // Mark the parent modal as managed (if it exists)
       var modal = markModalAsManaged(iframe);
 
       applyChrome(iframe);
       applyHeight(iframe, h);
 
-      // Only enforce on this specific managed modal
       if (modal) {
         enforceOlyticsTopLock(modal);
       }
